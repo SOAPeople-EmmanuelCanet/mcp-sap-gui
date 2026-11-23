@@ -272,7 +272,7 @@ class TablesMixin:
 
     def read_table(self, table_id: str, max_rows: int = 100,
                    columns: str = "", columns_only: bool = False,
-                   start_row: Optional[int] = None) -> Dict[str, Any]:
+                   start_row: Optional[int] = None, allow_scroll: bool = True) -> Dict[str, Any]:
         """
         Read data from an ALV grid or table control.
 
@@ -306,11 +306,11 @@ class TablesMixin:
             table = self._find_element(table_id)
             if getattr(table, 'Type', '') == "GuiTableControl":
                 return self._read_table_control(
-                    table, table_id, max_rows, col_filter, columns_only, start_row,
+                    table, table_id, max_rows, col_filter, columns_only, start_row, allow_scroll,
                 )
             return self._read_alv_grid(
                 table, table_id, max_rows, col_filter, columns_only,
-                start_row or 0,
+                start_row or 0, allow_scroll,
             )
         except Exception as e:
             return self._error_result(
@@ -319,7 +319,7 @@ class TablesMixin:
                 "Could not read table",
             )
 
-    def _read_alv_rows(self, grid, columns, start_row, end_row):
+    def _read_alv_rows(self, grid, columns, start_row, end_row, allow_scroll=True):
         """Read ALV rows in [start_row, end_row), scrolling so every row renders.
 
         GuiGridView.GetCellValue(row, col) only returns a real value when ``row``
@@ -347,6 +347,8 @@ class TablesMixin:
         row = start_row
         while row < end_row:
             try:
+                if not allow_scroll:
+                    raise ValueError("Scrolling requires write approval")
                 grid.firstVisibleRow = row
                 window_end = min(row + visible, end_row)
             except Exception:
@@ -374,7 +376,7 @@ class TablesMixin:
     def _read_alv_grid(self, grid, table_id: str, max_rows: int,
                        col_filter: List[str] = None,
                        columns_only: bool = False,
-                       start_row: int = 0) -> Dict[str, Any]:
+                       start_row: int = 0, allow_scroll: bool = True) -> Dict[str, Any]:
         """Read data from an ALV grid (GuiGridView)."""
         all_columns = []
         for i in range(grid.ColumnCount):
@@ -412,7 +414,7 @@ class TablesMixin:
         if not columns_only:
             end_row = min(start_row + max_rows, grid.RowCount)
             data, unread_from, failed = self._read_alv_rows(
-                grid, columns, start_row, end_row)
+                grid, columns, start_row, end_row, allow_scroll)
 
         result = {
             "table_id": table_id,
@@ -532,7 +534,8 @@ class TablesMixin:
     def _read_table_control(self, table, table_id: str, max_rows: int,
                             col_filter: List[str] = None,
                             columns_only: bool = False,
-                            start_row: Optional[int] = None) -> Dict[str, Any]:
+                            start_row: Optional[int] = None,
+                            allow_scroll: bool = True) -> Dict[str, Any]:
         """Read visible rows from a GuiTableControl.
 
         Reads from the current scroll position without changing it (unless
@@ -605,6 +608,8 @@ class TablesMixin:
                 if new_pos != scrollbar.Position:
                     full_id = table.Id  # capture before the reference goes stale
                     try:
+                        if not allow_scroll:
+                            raise ValueError("Scrolling requires allow_scroll and write approval")
                         scrollbar.Position = new_pos
                         # The scroll round-trip re-renders the control and
                         # invalidates existing references — re-acquire.

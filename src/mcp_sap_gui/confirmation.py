@@ -3,8 +3,8 @@
 A *confirmation point* is a named category of write operations that requires a
 blocking ``ctx.elicit`` round-trip to the user before the server executes it.
 Points are resolved per MCP session (``sap_set_confirmation_points``) on top of
-an immutable server floor (``--confirm``).  ``save`` is always on and can never
-be removed.
+an immutable server floor (``--confirm``). ``save``, ``attach`` and ``all_writes``
+are always on and can never be removed.
 
 ``ConfirmationMiddleware`` is the single chokepoint.  It is registered AFTER
 ``AuditMiddleware`` so that a blocked call still produces an audit line
@@ -20,8 +20,8 @@ Two consequences of running as middleware, both handled here:
 * Blocking must ``raise`` (not return a bare ``ToolResult``): a content-only
   result fails fastmcp's outputSchema validation for ``-> dict`` tools.
 
-The middleware never touches COM; every SAP operation still happens inside the
-tool body on the single-threaded COM executor.
+The injected action-target reader and tool bodies use the single-threaded COM
+executor. The approved target is rechecked there immediately before mutation.
 """
 
 from __future__ import annotations
@@ -46,6 +46,7 @@ from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from .audit import logger as audit_logger
 from .preview import _normalize_fields, _overflow_line
+from .safety import WRITE_APPROVAL, WriteApproval
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ logger = logging.getLogger(__name__)
 #: in ``sap_press_button`` (both through the server's ``_gated_save``) and
 #: save-shaped popup answers in ``sap_handle_popup`` / ``sap_press_button``.
 SAVE_POINT = "save"
+MANDATORY_POINTS = frozenset({"save", "attach", "all_writes"})
 
 #: Points a session or the ``--confirm`` floor may activate.
 SETTABLE_POINTS: tuple[str, ...] = (
@@ -132,7 +134,7 @@ def effective_points(
     session_points: Iterable[str] | None,
 ) -> set[str]:
     """Return the points active for a session: floor + session + ``save``."""
-    return {SAVE_POINT} | set(floor or ()) | set(session_points or ())
+    return set(MANDATORY_POINTS) | set(floor or ()) | set(session_points or ())
 
 
 def points_with_provenance(
@@ -147,7 +149,7 @@ def points_with_provenance(
     floor_set = set(floor or ())
     rows: list[dict[str, str]] = []
     for point in sorted(effective_points(floor_set, session_points)):
-        if point == SAVE_POINT:
+        if point in MANDATORY_POINTS:
             source = "always-on"
         elif point in floor_set:
             source = "server-floor"
@@ -165,7 +167,13 @@ def is_effective_write(tool_name: str, args: Mapping[str, Any], tags: Iterable[s
     so gating the read form would both prompt and (in read-only mode) reject a
     call the server otherwise allows.
     """
-    if "write" not in set(tags):
+    if tool_name == "sap_read_table":
+        return bool(args.get("allow_scroll", False)) and not args.get("columns_only", False)
+    if tool_name == "sap_read_list":
+        return args.get("scroll_to", -1) >= 0
+    if tool_name == "sap_handle_popup":
+        return args.get("action", "read") != "read"
+    if not {"write", "destructive"}.intersection(tags):
         return False
     if tool_name == "sap_get_tree_node_children":
         return bool(args.get("expand", False))
@@ -661,6 +669,7 @@ def _mark_confirmed(result: ToolResult) -> ToolResult:
     if (
         result.is_error
         or not isinstance(data, dict)
+        or data.get("status") == "cancelled"
         or len(result.content) != 1
         or not isinstance(result.content[0], mcp.types.TextContent)
     ):
@@ -699,9 +708,10 @@ class ConfirmationMiddleware(Middleware):
     and silently never fires.  Found live; pinned by tests/test_stdio_gate.py.
     """
 
-    def __init__(self, *, active_points, precheck) -> None:
+    def __init__(self, *, active_points, precheck, prepare_action=None) -> None:
         self._active_points = active_points
         self._precheck = precheck
+        self._prepare_action = prepare_action
 
     async def on_call_tool(
         self,
@@ -736,7 +746,9 @@ class ConfirmationMiddleware(Middleware):
             # Only needed for the tag-driven point; skip the lookup otherwise.
             tags = await _tool_tags(ctx, tool_name)
 
-        point = point_for_call(tool_name, args, active, tags)
+        # Connection creation has its own prompt before a session exists.
+        point = (None if tool_name == "sap_connect" else
+                 point_for_call(tool_name, args, active, tags))
         if point is None:
             return await call_next(context)
         logger.debug("confirmation gate: tool=%s point=%s", tool_name, point)
@@ -746,17 +758,35 @@ class ConfirmationMiddleware(Middleware):
         # be rejected here — never prompt for a call that cannot run.
         self._precheck(tool_name, args, ctx)
 
+        if self._prepare_action is None:
+            raise ToolError("Write approval cannot verify the SAP target. Nothing executed.")
+        try:
+            controller, target = await self._prepare_action(ctx)
+        except Exception as exc:
+            raise ToolError(
+                "Cannot verify the approved SAP session and screen. "
+                "Attach again if its identity changed. Nothing executed."
+            ) from exc
+        shown = {"tool": tool_name, "arguments": args, "target": target}
+        identity = target["identity"]
+        message = build_prompt(tool_name, args, point) + (
+            f"\nSAP {identity['system']} / {identity['client']} / {identity['user']}"
+            f"\nSession {identity['id']} ({identity['system_session_id']})"
+            f"\nScreen: {json.dumps(target['screen'], ensure_ascii=False)}"
+        )
+
         try:
             answer = await ask_user(
                 ctx,
                 points=point,
                 tool=tool_name,
-                message=build_prompt(tool_name, args, point),
+                message=message,
                 # The CLI shows the answer as a checkbox: without a title it
                 # reads "Value". Only a ticked box with Accept proceeds.
                 response_title="Yes, run it",
                 gate=f"point:{point}",
                 can_ask=True,
+                shown=shown,
             )
         except McpError as exc:
             # Fail closed, matching the existing save gate.
@@ -770,7 +800,11 @@ class ConfirmationMiddleware(Middleware):
         if isinstance(answer, Ask):
             return InputRequiredToolResult(answer.result)
         if answer.yes:
-            return _mark_confirmed(await call_next(context))
+            token = WRITE_APPROVAL.set(WriteApproval(controller, target))
+            try:
+                return _mark_confirmed(await call_next(context))
+            finally:
+                WRITE_APPROVAL.reset(token)
         raise ToolError(
             f"{tool_name} declined by user at confirmation point '{point}' "
             f"({answer.action}). Nothing was executed.{answer.note}"

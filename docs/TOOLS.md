@@ -28,10 +28,10 @@ A confirmation point is a category of write operations that waits for the user's
 | `transactions` | `sap_execute_transaction` |
 | `batch_fields` | `sap_set_batch_fields` |
 | `field_writes` | `sap_set_field`, `sap_modify_cell`, `sap_set_textedit`, `sap_select_checkbox`, `sap_select_radio_button`, `sap_select_combobox_entry` |
-| `all_writes` | Every `write`-tagged tool. Deliberately strict and noisy: many write tools only select, scroll or navigate. Under `all_writes`, `sap_send_key("F11")` prompts twice — once for the category, once for the unchanged save gate |
-| `attach` | `sap_connect_existing`: the user picks the SAP session in a choice dialog listing every open session (system, session number, client, user, transaction, window title), unless the call names a system with exactly one open session. Declining attaches nothing; a client without dialogs gets an error telling the agent to ask in the chat and pass `system` |
+| `all_writes` | Always on, argument-aware for mixed read/write tools: many write tools only select, scroll or navigate. Under `all_writes`, `sap_send_key("F11")` prompts twice — once for the category, once for the unchanged save gate |
+| `attach` | `sap_connect_existing`: the user picks the SAP session in a choice dialog listing every open session (system, session number, client, user, transaction, window title), even for a single named/indexed session. Declining or unsupported dialogs attach nothing; there is no name-based fallback |
 
-Activate points per session with `sap_set_confirmation_points`, or for every session with `--confirm POINT [POINT ...]`. Adding a point is silent; removing a session point asks the user first and a declined removal keeps it. Points set by `--confirm` and the `save` point can never be removed.
+Activate points per session with `sap_set_confirmation_points`, or for every session with `--confirm POINT [POINT ...]`. Adding a point is silent; removing a session point asks the user first and a declined removal keeps it. Points set by `--confirm` and the mandatory `save`, `attach` and `all_writes` points can never be removed.
 
 An accepted call's result carries `confirmed_by_user: true`, so the agent, which never sees the prompt, can tell an approved write from an ungated one. Declining returns an error and nothing is executed. Clients without elicitation support fail closed: the gated call errors rather than running unconfirmed, and a point activated there cannot be removed again. Which clients show the questions, the rules for answers that come too fast or after the screen changed, and the audit outcomes: [Confirmations](CONFIRMATIONS.md).
 
@@ -39,7 +39,7 @@ Points are scoped to the MCP session, not the SAP connection: they survive `sap_
 
 A save goes only to the screen it was approved for: the screen, system, client, user and session are read again just before the save is sent, and if they changed the result is `status: cancelled`, `action: changed` (nothing sent).
 
-Known gap: menu paths (Table View → Save), ALV / application-toolbar Save buttons, application functions that post, and function codes typed into the command field are not mapped to the `save` point: the server recognises a save by how it is sent, not by its effect ([Confirmations](CONFIRMATIONS.md#known-gaps)).
+Menu paths, ALV/application-toolbar buttons, application functions that post and command-field function codes all require mandatory `all_writes` approval. They may not trigger the additional `save` question, which recognizes specific Save operations rather than every possible commit ([coverage and limits](CONFIRMATIONS.md#known-gaps)).
 
 ## Connection
 
@@ -47,11 +47,11 @@ Preferred usage: use `sap_connect_existing` when the user is already logged in t
 
 | Tool | Description |
 |------|-------------|
-| `sap_connect` | Connect to an SAP system by SAP Logon entry name. Credentials resolved from `.env` file — passwords never appear in MCP |
-| `sap_connect_existing` | Attach to an already open SAP session (SAP Logon or SAP Business Client), by `connection_index` / `session_index` or by `system` (`DEV` or `DEV/100`) when the user named it: one open session on it is attached, several or none return an error listing what is open. The response says how the session was chosen (`chosen_by`), and the audit log records an `attach` event |
+| `sap_connect` | With writes enabled and approval, open/log on by SAP Logon entry name; then detach and return `binding_pending`. Call `sap_connect_existing` for actual session approval. Credentials resolved from `.env` file — passwords never appear in MCP |
+| `sap_connect_existing` | Attach to an already open SAP session (SAP Logon or SAP Business Client), by `connection_index` / `session_index` or by `system` (`DEV` or `DEV/100`) when the user named it: matching sessions are offered in an approval picker, even when there is only one. The response says how the session was chosen (`chosen_by`), and the audit log records an `attach` event |
 | `sap_list_connections` | List all currently open SAP connections and sessions, incl. SAP Business Client; reports `host` and `scripting_disabled`, and per session its system, client, user, transaction, `session_number` and window `title` |
 | `sap_get_session_info` | Get current session metadata like system, client, user, transaction, and screen, plus the SAP GUI release (`sap_gui_version`, e.g. `8.10 PL0`) and whether the server allows only read-only scripting (`scripting_read_only`) |
-| `sap_disconnect` | Disconnect from the current SAP session. Closes only the sessions this server opened (the `sap_connect` session and `/o` windows opened from it); attached sessions are left open |
+| `sap_disconnect` | Disconnect from the current SAP session. Revokes the binding and leaves all SAP windows open; close windows manually |
 | `sap_set_confirmation_points` | Choose which write categories need blocking user approval for this session (see [Confirmation Points](#confirmation-points)) |
 
 ## Navigation
@@ -91,7 +91,7 @@ Preferred usage: use `sap_connect_existing` when the user is already logged in t
 
 | Tool | Description |
 |------|-------------|
-| `sap_read_table` | Read rows and columns from a table or grid. With `columns_only=true` a TableControl also reports each column's `cell_type` and a `cell_id` template (`{row}` = zero-based visible row). Columns of a table without rows are flagged `name_is_title`: no cell exists yet to read the technical name from. A TableControl's `total_rows` counts its empty lines too (SM30 pads the view): the read stops at the first empty row with no data below it and reports its index as `empty_rows_from`, where the data ends. On a TableControl, `start_row` (0 included) scrolls there first; without it the read starts where the table is scrolled now, e.g. after "Position...". An ALV read that cannot scroll (read-only scripting) stops at the rows on screen and reports `unread_from_row`. An ALV read also reports, when set, the grid's `title` and its selection, which toolbar and menu functions act on: `selected_rows` in SAP's form (`"1,2,4-8,10"`) with `selected_row_count`, `selected_cells`, `selected_columns`. What could not be read is said: requested column names the table does not have in `unknown_columns` (none known: an error listing the table's names), cells that could not be read as null values listed in `unreadable_cells` (ALV) or `unreadable_rows` (a whole TableControl row), with a `warning` |
+| `sap_read_table` | Read rows and columns without scrolling by default. `allow_scroll=true` requires writes enabled and approval. With `columns_only=true` a TableControl also reports each column's `cell_type` and a `cell_id` template (`{row}` = zero-based visible row). Columns of a table without rows are flagged `name_is_title`: no cell exists yet to read the technical name from. A TableControl's `total_rows` counts its empty lines too (SM30 pads the view): the read stops at the first empty row with no data below it and reports its index as `empty_rows_from`, where the data ends. On a TableControl with `allow_scroll=true`, `start_row` (0 included) scrolls there first; without it the read starts where the table is scrolled now, e.g. after "Position...". An ALV read that cannot scroll (read-only scripting) stops at the rows on screen and reports `unread_from_row`. An ALV read also reports, when set, the grid's `title` and its selection, which toolbar and menu functions act on: `selected_rows` in SAP's form (`"1,2,4-8,10"`) with `selected_row_count`, `selected_cells`, `selected_columns`. What could not be read is said: requested column names the table does not have in `unknown_columns` (none known: an error listing the table's names), cells that could not be read as null values listed in `unreadable_cells` (ALV) or `unreadable_rows` (a whole TableControl row), with a `warning` |
 | `sap_select_table_row` | Select a row |
 | `sap_double_click_cell` | Double-click a cell |
 | `sap_modify_cell` | Modify an editable cell. On a TableControl it scrolls to the row first and refuses if the row is still not visible afterwards, instead of writing another row |
@@ -127,7 +127,7 @@ Preferred usage: use `sap_connect_existing` when the user is already logged in t
 | `sap_handle_popup` | Read and act on popups in one call, including `confirm`, `cancel`, `press`, and safe `auto` handling with post-action verification. `cancel` presses a Cancel button or F12, never No (on a save prompt No drops the changes). When the Enter or F12 fallback leaves the popup as it was, the result is `action: "no_effect"`. After an action the result keeps the popup's title, texts and entered values and drops its now-dead element IDs |
 | `sap_get_toolbar_buttons` | List standard SAP toolbar buttons |
 | `sap_read_shell_content` | Read content from shell-based controls such as HTML viewers (page text only with the Internet Explorer browser control; the Edge control, e.g. the F1 Performance Assistant, is reported as not readable) |
-| `sap_read_list` | Read a classic ABAP list (`WRITE` output, F4 hit lists) as lines of text, with list colours and paging. One page is ~500 label elements to discovery; this returns the lines |
+| `sap_read_list` | Read a classic ABAP list (`WRITE` output, F4 hit lists) as lines of text, with list colours and paging. `scroll_to` requires writes enabled and approval. One page is ~500 label elements to discovery; this returns the lines |
 
 Every action tool also reports a popup that it opened: `screen.popup` carries the classification, texts, button labels and any `prefilled_inputs`, so the values are visible before the agent decides how to respond.
 

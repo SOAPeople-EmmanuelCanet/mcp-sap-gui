@@ -12,6 +12,8 @@ import pytest
 from mcp_sap_gui import server
 from mcp_sap_gui.sap_controller import SAPGUIController
 
+pytestmark = pytest.mark.usefixtures("approved_action_for_direct_calls")
+
 
 class FakeElement:
     """A COM element that records what was done to it."""
@@ -70,6 +72,10 @@ class FakeController(SAPGUIController):
     @property
     def session(self) -> FakeSession:
         return self._session
+
+    def action_target(self):
+        from tests.fakes import action_target
+        return action_target()
 
     def _require_session(self) -> None:
         return None

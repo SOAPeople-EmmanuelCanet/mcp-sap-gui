@@ -8,8 +8,9 @@ read confirmation points from the phantom module and silently never fired.
 In-memory clients share one module object, so only a subprocess over stdio
 can catch this class of bug.
 
-No SAP needed: the gate elicits BEFORE the tool body raises "Not connected",
-so the elicitation prompt (or its absence) is the verdict.
+No SAP needed: replace the controller's target read with a complete fake.
+The running __main__ must use --enable-writes and the configured floor;
+a second module with default read-only globals would refuse before asking.
 """
 
 import sys
@@ -27,9 +28,17 @@ async def test_confirmation_gate_fires_over_stdio():
         prompts.append(str(message))
         return ElicitResult(action="decline")
 
-    transport = StdioTransport(
-        command=sys.executable, args=["-m", "mcp_sap_gui.server"]
-    )
+    script = """
+import runpy
+import sys
+from mcp_sap_gui.controller import SAPGUIControllerBase
+from tests.fakes import action_target
+SAPGUIControllerBase._check_dependencies = lambda self: None
+SAPGUIControllerBase.action_target = lambda self: action_target()
+sys.argv = ["mcp-sap-gui", "--enable-writes"]
+runpy.run_module("mcp_sap_gui.server", run_name="__main__")
+"""
+    transport = StdioTransport(command=sys.executable, args=["-c", script])
     async with Client(transport, elicitation_handler=decline_handler) as client:
         await client.call_tool(
             "sap_set_confirmation_points", {"points": ["field_writes"]}

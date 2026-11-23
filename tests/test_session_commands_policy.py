@@ -19,6 +19,8 @@ from mcp_sap_gui.server import (
     precheck_before_confirmation,
 )
 
+pytestmark = pytest.mark.usefixtures("approved_action_for_direct_calls")
+
 OKCD = "wnd[0]/tbar[0]/okcd"
 
 
@@ -33,6 +35,7 @@ def _use_policy(monkeypatch, tmp_path=None, **file_data):
         policy_file=str(policy_file) if policy_file else None,
     )
     monkeypatch.setattr(server, "config", ServerConfig(
+        read_only=False,
         blocked_transactions=policy.block,
         allowed_exceptions=policy.allow,
         policy_preset=policy.preset,

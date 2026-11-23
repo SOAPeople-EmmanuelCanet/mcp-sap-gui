@@ -53,3 +53,30 @@ def answers_count_as_human(monkeypatch):
     set the threshold themselves (tests/test_no_dialog.py)."""
     from mcp_sap_gui import confirmation
     monkeypatch.setattr(confirmation, "NO_DIALOG_MS", 0.0)
+
+
+@pytest.fixture
+def approved_action_for_direct_calls(monkeypatch):
+    """Unit tests of tool bodies start after middleware approval.
+
+    Only explicitly selected modules use this. MCP integration/security tests
+    exercise the real middleware and never use this fixture.
+    """
+    from mcp_sap_gui import server
+    from mcp_sap_gui.safety import WRITE_APPROVAL, WriteApproval
+    from tests.fakes import action_target
+
+    monkeypatch.setattr(server, "config", server.ServerConfig(read_only=False))
+
+    original = server._com_write
+
+    async def approved(c, fn):
+        if not hasattr(c, "action_target"):
+            monkeypatch.setattr(c, "action_target", action_target, raising=False)
+        token = WRITE_APPROVAL.set(WriteApproval(c, c.action_target()))
+        try:
+            return await original(c, fn)
+        finally:
+            WRITE_APPROVAL.reset(token)
+
+    monkeypatch.setattr(server, "_com_write", approved)

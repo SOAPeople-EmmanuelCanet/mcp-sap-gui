@@ -10,6 +10,17 @@ from mcp_sap_gui.sap_controller import SAPGUIController
 
 TABLE_ID = "wnd[0]/usr/tblSAPLTEST"
 
+
+def action_target():
+    """Complete stable target for tests that replace the COM/controller boundary."""
+    return {
+        "identity": {"id": "/app/con[0]/ses[0]", "system": "DEV", "client": "100",
+                     "user": "TESTUSER", "system_session_id": "test-logon", "session_number": "1"},
+        "screen": {"active_window": "wnd[0]", "transaction": "SU3",
+                   "program": "SAPLSUU5", "screen_number": 100, "title": "User profile"},
+        "binding_generation": "test-binding",
+    }
+
 # A cell is (Type, value): value is Text, Selected (bool) or Key by type.
 Cell = Tuple[str, Any]
 

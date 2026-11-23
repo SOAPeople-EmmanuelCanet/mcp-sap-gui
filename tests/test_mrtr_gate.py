@@ -37,10 +37,12 @@ async def _accept(message, response_type, params, context):
 @pytest.fixture
 def gated(monkeypatch):
     """Server with field_writes as a floor point and a mock controller."""
-    monkeypatch.setattr(server, "config", server.ServerConfig(
+    monkeypatch.setattr(server, "config", server.ServerConfig(read_only=False,
         confirmation_floor=["field_writes"],
     ))
     controller = MagicMock(Busy=False)
+    from tests.fakes import action_target
+    controller.action_target.side_effect = action_target
     controller.set_field.return_value = {"status": "ok"}
 
     async def inline(fn):

@@ -49,13 +49,13 @@ List all editable fields on this screen
 Read the first 20 rows of the visible table
 ```
 
-If several SAP sessions are open, name the system: *"connect to my DEV session"*.
+Approve the actual system, client, user and access level in the session picker. Even one matching session needs approval. If several SAP sessions are open, name the system: *"connect to my DEV session"*.
 
 More ideas of what to ask: [What it can do](OVERVIEW.md).
 
 ## When the assistant wants to change something
 
-A save with F11 or the Save button asks you first: the server puts a question in front of you (*"Yes, save"*), and nothing is saved until you answer yes. You can make the assistant ask before other kinds of changes too, for example before every field it fills: say *"ask me before every field write"*. How the questions look and what each answer does: [Confirmations](CONFIRMATIONS.md).
+The server defaults to read-only. To permit changes, add `--enable-writes` to its startup arguments and restart it. Every mutating action then asks for approval, including navigation, menus, keys, scrolling and popup responses. Standard Save actions retain an additional save question. The assistant cannot enable writes or disable these mandatory gates. See [Confirmations](CONFIRMATIONS.md) and [Configuration](CONFIGURATION.md).
 
 ## Updating to a new release
 

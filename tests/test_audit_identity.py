@@ -161,7 +161,12 @@ async def test_server_writes_the_bound_system_into_each_line(monkeypatch, caplog
     async with Client(server.mcp) as client:
         await client.call_tool("sap_get_session_info", {}, raise_on_error=False)
         [managed] = server._session_mgr._sessions.values()
-        managed.controller._session = SimpleNamespace(Info=_info(), Busy=False)
+        info = _info()
+        info.SystemSessionId = "test-logon"
+        managed.controller._session = SimpleNamespace(
+            Info=info, Busy=False, Id="/app/con[0]/ses[0]")
+        from mcp_sap_gui.safety import binding_identity
+        managed.controller.approve_binding(binding_identity(managed.controller._session))
         await client.call_tool("sap_get_session_info", {})
         await client.call_tool("sap_get_session_info", {})
 

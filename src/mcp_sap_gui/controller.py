@@ -197,6 +197,9 @@ class SAPGUIControllerBase:
         self._application = None
         self._connection = None
         self._session = None
+        self.require_binding_approval = False
+        self._approved_identity = None
+        self._approved_session = None
         # True when the bound session is one this controller opened.
         self._owns_session = False
         # What disconnect() may close: the connection connect() opened, and
@@ -581,9 +584,12 @@ class SAPGUIControllerBase:
     def _require_session(self):
         """Ensure we have an active session that is not busy."""
         if not self.is_connected:
+            self.revoke_binding()
             raise SAPGUINotConnectedError(
                 "Not connected to SAP. Call connect() first."
             )
+        if self.require_binding_approval:
+            self.verify_binding()
         try:
             if self._session.Busy:
                 raise SAPGUIError(
@@ -645,6 +651,7 @@ class SAPGUIControllerBase:
         Raises:
             SAPGUIError: If connection fails
         """
+        self.revoke_binding()
         try:
             # OpenConnection only exists on the SAP Logon engine.
             app = self._get_saplogon_engine()
@@ -682,7 +689,7 @@ class SAPGUIControllerBase:
             logger.info("Connected successfully to %s as %s",
                          system_description, user or "(existing credentials)")
             self._read_session_traits()
-            return self.get_session_info()
+            return self._read_session_info()
 
         except SAPGUIError:
             raise
@@ -709,6 +716,7 @@ class SAPGUIControllerBase:
         Returns:
             SessionInfo with session details
         """
+        self.revoke_binding()
         try:
             found = self._discover_connections()
 
@@ -757,7 +765,7 @@ class SAPGUIControllerBase:
                 connection_index, session_index, rot_name,
             )
             self._read_session_traits()
-            return self.get_session_info()
+            return self._read_session_info()
 
         except SAPGUIError:
             raise
@@ -782,6 +790,7 @@ class SAPGUIControllerBase:
 
         Returns the Ids of the sessions that were closed.
         """
+        self.revoke_binding()
         closed: List[str] = []
         if close_owned and self._owned_connection is not None:
             # Newest first, so the logon session (whose close also ends the
@@ -869,6 +878,9 @@ class SAPGUIControllerBase:
         The new session is owned only if the session it was opened from was
         owned. Returns True when the binding moved; otherwise it is unchanged.
         """
+        # A new SAP window requires its own explicit attachment approval.
+        if self.require_binding_approval:
+            return False
         connection = self._connection
         if connection is None:
             return False
@@ -894,6 +906,11 @@ class SAPGUIControllerBase:
         """Get information about the current session."""
         self._require_session()
 
+        return self._read_session_info()
+
+    def _read_session_info(self) -> SessionInfo:
+        """Identity metadata during attachment, before screen access is authorized."""
+
         info = self._session.Info
         system, client, user = info.SystemName, info.Client, info.User
         self.sap_identity = _identity_dict(system, client, user)
@@ -910,6 +927,64 @@ class SAPGUIControllerBase:
             sap_gui_version=self.sap_gui_version,
             scripting_read_only=self.scripting_read_only,
         )
+
+    def revoke_binding(self) -> None:
+        import uuid
+
+        self._approved_identity = None
+        self._approved_session = None
+        self._binding_generation = uuid.uuid4().hex
+
+    def approve_binding(self, expected: dict) -> None:
+        from .safety import binding_identity, validate_identity
+
+        self.revoke_binding()
+        current = binding_identity(self._session)
+        if current != validate_identity(expected):
+            raise SAPGUIError("SAP sessions changed during approval. Nothing was attached.")
+        self._approved_identity = current
+        self._approved_session = self._session
+
+    def verify_binding(self) -> dict:
+        from .safety import binding_identity
+
+        try:
+            current = binding_identity(self._session)
+            if (self._approved_identity is None or self._session is not self._approved_session
+                    or current != self._approved_identity):
+                raise SAPGUIError("SAP session changed or has no attachment approval.")
+            return current
+        except Exception:
+            self.revoke_binding()
+            raise SAPGUIError(
+                "SAP session identity changed or is unavailable. "
+                "Attach again with sap_connect_existing and obtain user approval."
+            ) from None
+
+    def action_target(self) -> dict:
+        """Strict fingerprint for an action, read on the COM thread."""
+        from .safety import binding_identity
+
+        self._require_session()
+        identity = binding_identity(self._session)
+        try:
+            info = self._session.Info
+            window = self._session.ActiveWindow
+            screen = {
+                "active_window": self._normalize_window_id(window.Id),
+                "transaction": info.Transaction,
+                "program": info.Program,
+                "screen_number": info.ScreenNumber,
+                "title": window.Text,
+            }
+            if any(not isinstance(value, (str, int)) for value in screen.values()):
+                raise ValueError("Incomplete screen identity")
+            if not screen["active_window"] or not screen["program"]:
+                raise ValueError("Missing screen identity")
+        except Exception as exc:
+            raise SAPGUIError("Cannot verify the current SAP screen. Nothing authorized.") from exc
+        return {"identity": identity, "screen": screen,
+                "binding_generation": getattr(self, "_binding_generation", "")}
 
     def _connection_label(self, conn, host: str) -> str:
         """Short human label for a connection, used in error messages."""
@@ -963,6 +1038,11 @@ class SAPGUIControllerBase:
                         "system": info.SystemName,
                         "client": info.Client,
                     }
+                    from .safety import binding_identity
+                    try:
+                        entry_s.update(binding_identity(sess))
+                    except SAPGUIError:
+                        entry_s["identity_unavailable"] = True
                     # The number SAP shows in the title, "DEV(2)", and the
                     # window title: together they tell several sessions on
                     # one system apart.

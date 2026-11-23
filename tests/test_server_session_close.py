@@ -40,25 +40,25 @@ def _tool(name: str):
     return asyncio.run(server.mcp.get_tool(name))
 
 
-def test_disconnect_stays_visible_everywhere_but_is_not_read_only():
+def test_disconnect_is_read_only_and_stays_visible():
     tool = _tool("sap_disconnect")
     assert tool.tags == {"read"}
-    assert tool.annotations.read_only_hint is False
-    assert tool.annotations.destructive_hint is True
+    assert tool.annotations.read_only_hint is True
+    assert tool.annotations.destructive_hint is False
 
 
 def test_connect_is_not_read_only():
     tool = _tool("sap_connect")
-    assert tool.tags == {"read"}
+    assert tool.tags == {"write"}
     assert tool.annotations.read_only_hint is False
     assert tool.annotations.destructive_hint is False
 
 
-def test_disconnect_closes_owned_sessions(bound):
+def test_disconnect_leaves_owned_sessions_open(bound):
     result = asyncio.run(server.sap_disconnect(bound.ctx))
-    assert result["action"] == "closed"
-    assert result["closed_sessions"] == ["/app/con[1]/ses[0]"]
-    assert bound.controller.calls == [True]
+    assert result["action"] == "detached"
+    assert "closed_sessions" not in result
+    assert bound.controller.calls == [False]
 
 
 @pytest.mark.parametrize("floor", ["exploration", "operator"])
@@ -67,7 +67,7 @@ def test_disconnect_does_not_depend_on_the_profile(bound, monkeypatch, floor):
     # until then a profile hides tools but does not change what is closed.
     monkeypatch.setattr(server, "config", server.ServerConfig(profile=floor))
     asyncio.run(server.sap_disconnect(bound.ctx))
-    assert bound.controller.calls == [True]
+    assert bound.controller.calls == [False]
 
 
 def _shutdown_close_owned(monkeypatch, config) -> list:
@@ -87,8 +87,8 @@ def _shutdown_close_owned(monkeypatch, config) -> list:
     return calls
 
 
-def test_shutdown_closes_owned_sessions_by_default(monkeypatch):
-    assert _shutdown_close_owned(monkeypatch, server.ServerConfig()) == [True]
+def test_shutdown_detaches_by_default(monkeypatch):
+    assert _shutdown_close_owned(monkeypatch, server.ServerConfig()) == [False]
 
 
 def test_shutdown_with_detach_on_exit_closes_nothing(monkeypatch):

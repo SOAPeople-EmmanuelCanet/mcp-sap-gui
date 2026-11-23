@@ -28,7 +28,7 @@ def srv():
     """Configure the server module with a fresh SessionManager and config."""
     original = _server_mod.config
     _server_mod._session_mgr = SessionManager()
-    _server_mod.config = _server_mod.ServerConfig()
+    _server_mod.config = _server_mod.ServerConfig(read_only=False, )
     yield _server_mod
     _server_mod.config = original
 
@@ -75,6 +75,8 @@ async def _fake_com(fn):
 def _patched_controller(**returns):
     """Patch _ctrl/_com so tool bodies hit a MagicMock instead of SAP GUI."""
     controller = MagicMock(Busy=False)
+    from tests.fakes import action_target
+    controller.action_target.side_effect = action_target
     # No popup answer to ask about: sap_press_button asks plan_popup_button
     # first, and a bare MagicMock would read as one.
     controller.plan_popup_button.return_value = None
@@ -219,16 +221,16 @@ class TestPointResolution:
         assert "... and 45 more fields" in prompt
 
     def test_effective_points_always_include_save(self):
-        assert _confirm_mod.effective_points([], []) == {"save"}
+        assert _confirm_mod.effective_points([], []) == {"save", "attach", "all_writes"}
         assert _confirm_mod.effective_points(["transactions"], ["field_writes"]) == {
-            "save", "transactions", "field_writes",
+            "save", "attach", "all_writes", "transactions", "field_writes",
         }
 
     def test_provenance_sources(self):
         rows = _confirm_mod.points_with_provenance(["transactions"], ["field_writes"])
         by_point = {r["point"]: r["source"] for r in rows}
         assert by_point == {
-            "save": "always-on",
+            "save": "always-on", "attach": "always-on", "all_writes": "always-on",
             "transactions": "server-floor",
             "field_writes": "session",
         }
@@ -252,14 +254,17 @@ class TestConfirmationPointTool:
         result = await srv.sap_set_confirmation_points(["field_writes"], ctx)
 
         ctx.elicit.assert_not_called()
-        assert result["active"] == ["field_writes", "save"]
+        assert result["active"] == ["all_writes", "attach", "field_writes", "save"]
 
     async def test_provenance_in_response(self, srv):
         ctx = _make_elicit_ctx()
         result = await srv.sap_set_confirmation_points(["transactions"], ctx)
 
         by_point = {r["point"]: r["source"] for r in result["points"]}
-        assert by_point == {"save": "always-on", "transactions": "session"}
+        assert by_point == (
+            {"save": "always-on", "attach": "always-on", "all_writes": "always-on",
+             "transactions": "session"}
+        )
 
     async def test_removal_elicits_and_accept_removes(self, srv):
         ctx = _make_elicit_ctx()
@@ -270,7 +275,7 @@ class TestConfirmationPointTool:
 
         ctx.elicit.assert_called_once()
         assert "field_writes" in ctx.elicit.call_args.kwargs["message"]
-        assert result["active"] == ["save"]
+        assert result["active"] == ["all_writes", "attach", "save"]
         assert result["removal_declined"] == []
 
     async def test_removal_declined_keeps_point(self, srv):
@@ -305,7 +310,7 @@ class TestConfirmationPointTool:
         assert "transactions" in result["active"]
 
     async def test_floor_point_is_not_removable_and_does_not_elicit(self, srv):
-        srv.config = srv.ServerConfig(confirmation_floor=["field_writes"])
+        srv.config = srv.ServerConfig(read_only=False, confirmation_floor=["field_writes"])
         ctx = _make_elicit_ctx()
 
         result = await srv.sap_set_confirmation_points([], ctx)
@@ -317,13 +322,13 @@ class TestConfirmationPointTool:
     async def test_save_point_is_not_settable(self, srv):
         ctx = _make_elicit_ctx()
         with pytest.raises(ValueError, match="Unknown confirmation point"):
-            await srv.sap_set_confirmation_points(["save"], ctx)
+            await srv.sap_set_confirmation_points(["all_writes", "attach", "save"], ctx)
 
     async def test_save_point_always_listed(self, srv):
         ctx = _make_elicit_ctx()
         result = await srv.sap_set_confirmation_points([], ctx)
-        assert result["active"] == ["save"]
-        assert result["always_on"] == ["save"]
+        assert result["active"] == ["all_writes", "attach", "save"]
+        assert result["always_on"] == ["all_writes", "attach", "save"]
 
     async def test_relax_fails_closed_without_elicitation(self, srv):
         from mcp.types import INVALID_REQUEST
@@ -351,8 +356,12 @@ class TestConfirmationPointTool:
         await srv.sap_set_confirmation_points(["field_writes"], ctx_a)
         await srv.sap_set_confirmation_points(["transactions"], ctx_b)
 
-        assert srv.active_confirmation_points(ctx_a) == {"save", "field_writes"}
-        assert srv.active_confirmation_points(ctx_b) == {"save", "transactions"}
+        assert srv.active_confirmation_points(ctx_a) == (
+            {"save", "attach", "all_writes", "field_writes"}
+        )
+        assert srv.active_confirmation_points(ctx_b) == (
+            {"save", "attach", "all_writes", "transactions"}
+        )
 
     async def test_release_does_not_clear_session_points(self, srv):
         """Point lifetime is the MCP session, not the SAP binding.
@@ -365,7 +374,9 @@ class TestConfirmationPointTool:
 
         srv._session_mgr.release(srv._session_key(ctx))
 
-        assert srv.active_confirmation_points(ctx) == {"save", "field_writes"}
+        assert srv.active_confirmation_points(ctx) == (
+            {"save", "attach", "all_writes", "field_writes"}
+        )
 
     async def test_shutdown_clears_session_points(self, srv):
         ctx = _make_elicit_ctx()
@@ -373,7 +384,7 @@ class TestConfirmationPointTool:
 
         srv._session_mgr.shutdown()
 
-        assert srv.active_confirmation_points(ctx) == {"save"}
+        assert srv.active_confirmation_points(ctx) == {"save", "attach", "all_writes"}
 
     async def test_tool_is_read_tagged(self, srv):
         """Adding safety must be possible in every profile."""
@@ -390,7 +401,7 @@ class TestConfirmationPointTool:
 class TestGating:
     """Each point category gates a representative tool call end to end."""
 
-    async def test_no_points_means_no_prompt(self, srv):
+    async def test_default_all_writes_prompts(self, srv):
         controller, patcher = _patched_controller(set_field={"status": "ok"})
         elicitor = _Elicitor()
         with patcher:
@@ -399,7 +410,7 @@ class TestGating:
                     "sap_set_field",
                     {"field_id": "wnd[0]/usr/txtX", "value": "1"},
                 )
-        assert elicitor.messages == []
+        assert len(elicitor.messages) == 1
         controller.set_field.assert_called_once()
 
     async def test_field_writes_accept_proceeds(self, srv):
@@ -500,13 +511,10 @@ class TestGating:
                     raise_on_error=False,
                 )
 
-        # The same refusal as a declined F11: status cancelled, nothing pressed.
-        assert result.structured_content["status"] == "cancelled"
-        assert result.structured_content["button_id"] == "wnd[0]/tbar[0]/btn[11]"
-        assert "Save declined by user" in result.structured_content["error"]
-        assert "triggers Save" in elicitor.messages[0]
+        assert result.is_error
+        assert "all_writes" in _text(result)
+        assert len(elicitor.messages) == 1
         controller.press_button.assert_not_called()
-
     async def test_save_button_under_all_writes_asks_point_then_save(self, srv):
         controller, patcher = _patched_controller(press_button={"status": "ok"})
         elicitor = _Elicitor("accept")
@@ -566,27 +574,29 @@ class TestGating:
         assert result.structured_content["confirmed_by_user"] is True
         assert json.loads(_text(result))["confirmed_by_user"] is True
 
-    async def test_ungated_call_has_no_confirmed_by_user(self, srv):
+    async def test_button_requires_confirmation_client(self, srv):
         _, patcher = _patched_controller(press_button={"status": "ok"})
         with patcher:
             async with Client(srv.mcp) as client:
                 result = await client.call_tool(
                     "sap_press_button", {"button_id": "wnd[0]/tbar[1]/btn[8]"},
+                    raise_on_error=False,
                 )
 
-        assert "confirmed_by_user" not in result.structured_content
+        assert result.is_error
 
-    async def test_ordinary_button_is_not_gated(self, srv):
+    async def test_ordinary_button_is_gated(self, srv):
         controller, patcher = _patched_controller(press_button={"status": "ok"})
         elicitor = _Elicitor("decline")
         with patcher:
             async with Client(srv.mcp, elicitation_handler=elicitor.handler) as client:
                 await client.call_tool(
-                    "sap_press_button", {"button_id": "wnd[0]/tbar[1]/btn[8]"}
+                    "sap_press_button", {"button_id": "wnd[0]/tbar[1]/btn[8]"},
+                    raise_on_error=False
                 )
 
-        assert elicitor.messages == []
-        controller.press_button.assert_called_once()
+        assert len(elicitor.messages) == 1
+        controller.press_button.assert_not_called()
 
     async def test_all_writes_gates_sampled_write_tools(self, srv):
         controller, patcher = _patched_controller(
@@ -635,7 +645,7 @@ class TestGating:
         assert elicitor.messages == []
         controller.read_field.assert_called_once()
 
-    async def test_send_key_is_gated_once_by_the_body_gate(self, srv):
+    async def test_send_key_always_has_action_gate(self, srv):
         """No point maps sap_send_key, so F11 keeps exactly its own gate."""
         controller, patcher = _patched_controller(
             send_vkey={"status": "ok"}, check_vkey=None,  # F11 is active
@@ -649,8 +659,8 @@ class TestGating:
                 await client.call_tool("sap_send_key", {"key": "F11"})
                 await client.call_tool("sap_send_key", {"key": "Enter"})
 
-        assert len(elicitor.messages) == 1
-        assert "triggers Save (F11)" in elicitor.messages[0]
+        assert len(elicitor.messages) == 3
+        assert "triggers Save (F11)" in elicitor.messages[1]
         assert controller.send_vkey.call_count == 2
 
     async def test_all_writes_prompts_twice_for_the_save_key(self, srv):
@@ -696,20 +706,21 @@ class TestGating:
         assert result.is_error
         controller.set_field.assert_not_called()
 
-    async def test_tag_lookup_is_skipped_when_no_points_are_active(self, srv):
+    async def test_tag_lookup_always_checks_write_effects(self, srv):
         """Fast path: the catalog lookup only happens for all_writes."""
         controller, patcher = _patched_controller(set_field={"status": "ok"})
         elicitor = _Elicitor("decline")
-        exploding = AsyncMock(side_effect=AssertionError("tags must not be read"))
+        exploding = AsyncMock(return_value={"write"})
         with patcher, patch.object(_confirm_mod, "_tool_tags", exploding):
             async with Client(srv.mcp, elicitation_handler=elicitor.handler) as client:
                 await client.call_tool(
-                    "sap_set_field", {"field_id": "wnd[0]/usr/txtX", "value": "1"}
+                    "sap_set_field", {"field_id": "wnd[0]/usr/txtX", "value": "1"},
+                    raise_on_error=False
                 )
 
-        exploding.assert_not_called()
-        assert elicitor.messages == []
-        controller.set_field.assert_called_once()
+        exploding.assert_awaited()
+        assert len(elicitor.messages) == 1
+        controller.set_field.assert_not_called()
 
     async def test_setting_points_is_itself_never_gated(self, srv):
         """sap_set_confirmation_points is read-tagged: adding safety never prompts."""
@@ -778,10 +789,13 @@ class TestTagLookupFailsClosed:
             ran.append(True)
             return MagicMock()
 
+        from tests.fakes import action_target
+
         with pytest.raises(ToolError, match="declined by user"):
             middleware = _confirm_mod.ConfirmationMiddleware(
                 active_points=srv.active_confirmation_points,
                 precheck=srv.precheck_before_confirmation,
+                prepare_action=AsyncMock(return_value=(MagicMock(), action_target())),
             )
             await middleware.on_call_tool(mw_ctx, _next)
 
@@ -826,7 +840,7 @@ class TestFailClosed:
 
         assert result.is_error
         assert "does not support elicitation" in _text(result)
-        assert "Nothing was sent to SAP" in _text(result)
+        assert "Nothing was executed" in _text(result)
         assert "use a client that shows MCP confirmation dialogs" in _text(result)
         controller.send_vkey.assert_not_called()
 
@@ -1011,12 +1025,13 @@ class TestConfirmationAudit:
         elicitor = _Elicitor(action)
         with caplog.at_level(logging.INFO, logger="mcp_sap_gui.audit"), patcher:
             async with Client(srv.mcp, elicitation_handler=elicitor.handler) as client:
-                await client.call_tool("sap_send_key", {"key": "Save"})
+                await client.call_tool("sap_send_key", {"key": "Save"}, raise_on_error=False)
 
         events = _confirmation_records(caplog)
-        assert [(e["point"], e["tool"], e["outcome"]) for e in events] == [
-            ("save", "sap_send_key", outcome),
-        ]
+        expected = [("all_writes", "sap_send_key", outcome)]
+        if action == "accept":
+            expected.append(("save", "sap_send_key", "accepted"))
+        assert [(e["point"], e["tool"], e["outcome"]) for e in events] == expected
 
     async def test_save_key_unsupported_client_is_logged(self, srv, caplog):
         _, patcher = _patched_controller(send_vkey={"status": "ok"}, check_vkey=None)
@@ -1090,10 +1105,10 @@ class TestConfirmationCLIFloor:
 
     def test_config_rejects_unknown_floor_points(self, srv):
         with pytest.raises(ValueError, match="Unknown confirmation point"):
-            srv.ServerConfig(confirmation_floor=["nope"])
+            srv.ServerConfig(read_only=False, confirmation_floor=["nope"])
 
     async def test_floor_applies_to_a_fresh_session(self, srv):
-        srv.config = srv.ServerConfig(confirmation_floor=["transactions"])
+        srv.config = srv.ServerConfig(read_only=False, confirmation_floor=["transactions"])
         controller, patcher = _patched_controller(execute_transaction={"ok": True})
         elicitor = _Elicitor("decline")
         with patcher:
@@ -1107,7 +1122,7 @@ class TestConfirmationCLIFloor:
         controller.execute_transaction.assert_not_called()
 
     async def test_floor_survives_a_removal_attempt(self, srv):
-        srv.config = srv.ServerConfig(confirmation_floor=["transactions"])
+        srv.config = srv.ServerConfig(read_only=False, confirmation_floor=["transactions"])
         controller, patcher = _patched_controller(execute_transaction={"ok": True})
         elicitor = _Elicitor("accept")
         with patcher:
@@ -1183,7 +1198,7 @@ class TestReadOnlyScripting:
     async def test_writable_session_is_unaffected(self, srv):
         controller, patcher = _patched_controller(set_field={"status": "ok"})
         with patcher, self._bound(srv, controller, False):
-            async with Client(srv.mcp) as client:
+            async with Client(srv.mcp, elicitation_handler=_Elicitor().handler) as client:
                 await client.call_tool(
                     "sap_set_field", {"field_id": "wnd[0]/usr/txtX", "value": "1"},
                 )

@@ -65,6 +65,7 @@ class SessionManager:
         """Get or lazily create a managed session for *session_key*."""
         if session_key not in self._sessions:
             controller = SAPGUIController()
+            controller.require_binding_approval = True
             self._sessions[session_key] = ManagedSession(controller=controller)
             logger.info(
                 "Created SAP session binding (key=%s, total=%d)",

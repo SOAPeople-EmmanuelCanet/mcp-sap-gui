@@ -27,6 +27,8 @@ import pytest
 import mcp_sap_gui.server as srv_mod
 from mcp_sap_gui.session_manager import SessionManager
 
+pytestmark = pytest.mark.usefixtures("approved_action_for_direct_calls")
+
 # ===========================================================================
 # Helpers
 # ===========================================================================
@@ -56,7 +58,7 @@ def _png_bytes(width: int, height: int) -> bytes:
 def srv():
     """Fresh server module with a clean SessionManager + default config."""
     srv_mod._session_mgr = SessionManager()
-    srv_mod.config = srv_mod.ServerConfig()
+    srv_mod.config = srv_mod.ServerConfig(read_only=False, )
     yield srv_mod
     srv_mod._session_mgr.shutdown()
 
@@ -303,7 +305,7 @@ class TestLeaveTransactionCommand:
         assert srv._enforce_transaction_policy(tcode) == "/N"
 
     def test_allowlist_does_not_block_leaving(self, srv):
-        srv.config = srv.ServerConfig(allowed_transactions=["MM03"])
+        srv.config = srv.ServerConfig(read_only=False, allowed_transactions=["MM03"])
         assert srv._enforce_transaction_policy("/n") == "/N"
 
     @pytest.mark.parametrize("tcode", ["/nSU01", "/n su01", "/n/nSU01"])

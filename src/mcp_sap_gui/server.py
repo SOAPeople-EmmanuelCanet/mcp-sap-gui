@@ -39,6 +39,7 @@ from . import __version__
 from .audit import AuditMiddleware
 from .confirmation import (
     ATTACH_POINT,
+    MANDATORY_POINTS,
     NO_DIALOGS_NOTE,
     SAVE_POINT,
     SETTABLE_POINTS,
@@ -90,6 +91,7 @@ from .prompts import (
     render_transaction_guide,
     render_workflow_guide,
 )
+from .safety import WRITE_APPROVAL, validate_identity
 from .sap_controller import VKey
 from .session_manager import SessionManager
 from .strict import STRICT_ERRORS_ENV, StrictErrorMiddleware, strict_errors_from_env
@@ -198,7 +200,7 @@ class ServerConfig:
     """Configuration for the MCP SAP GUI server."""
 
     # Security settings
-    read_only: bool = False
+    read_only: bool = True
     allowed_transactions: Optional[List[str]] = None  # None = all allowed
     blocked_transactions: List[str] = field(
         default_factory=lambda: list(_DEFAULT_BLOCKED_TRANSACTIONS)
@@ -216,15 +218,13 @@ class ServerConfig:
     # Server-level confirmation points (--confirm). Always active, never
     # removable by sap_set_confirmation_points.
     confirmation_floor: List[str] = field(default_factory=list)
-    # --detach-on-exit: server shutdown never closes a session, not even one
-    # this server opened with sap_connect.
-    detach_on_exit: bool = False
+    # Compatibility setting: shutdown always detaches without closing SAP windows.
+    detach_on_exit: bool = True
     # --strict-errors / MCP_SAP_GUI_STRICT_ERRORS: return a failed result
     # (strict.result_error) as an MCP error (isError true). Off by default.
     strict_errors: bool = False
 
     # Behavior settings
-    auto_connect_existing: bool = True
     default_language: str = "EN"
     max_table_rows: int = 500
 
@@ -261,6 +261,8 @@ class ServerConfig:
                 f"Unknown policy profile: {self.profile!r}. "
                 f"Valid profiles: {', '.join(sorted(_PROFILES))}"
             )
+        if self.profile == "exploration":
+            self.read_only = True
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +294,7 @@ async def _lifespan(server: FastMCP):
         if _session_mgr is not None:
             try:
                 _session_mgr.executor.submit(
-                    _session_mgr.release_all, not config.detach_on_exit
+                    _session_mgr.release_all, False
                 ).result(timeout=10)
             except Exception:
                 pass
@@ -314,9 +316,13 @@ SAP GUI automation server. Controls SAP GUI for Windows via COM scripting.
 systems and customizations.
 - **Check `screen.active_window` after every action.** `wnd[1]` or higher is a \
 popup: read it with `sap_get_popup_window` before you go on.
-- **Confirmations.** F11 / Save always asks the user first; \
+- **Access.** Read-only by default. Startup --enable-writes permits \
+changes; no tool can enable writes. Every attachment and potentially mutating \
+action requires user approval, including named sessions, menus and keys. \
+F11 / Save also retains its additional save question. \
 `sap_set_confirmation_points` can add `transactions`, `batch_fields`, \
-`field_writes`, `all_writes` and `attach`. A "declined" error means the user \
+`field_writes`; `all_writes`, `attach` and `save` cannot be disabled. \
+A "declined" error means the user \
 said no: do not retry the call or reach its result another way. Tell the user \
 and wait for their next instruction. Offer `sap_preview` before significant \
 writes (batch fills, Save) so the user sees the screen and the pending values.
@@ -326,7 +332,9 @@ writes (batch fills, Save) so the user sees the screen and the pending values.
 1. SAP already logged on: `sap_connect_existing`; pass `system` (e.g. 'DEV') \
 when the user named the system. SAP Business Client sessions work too \
 (experimental).
-2. SAP not open: `sap_connect` with the SAP Logon entry.
+2. SAP not open: ask the user to log on manually. With writes enabled, \
+`sap_connect` can open a connection after approval; then call \
+`sap_connect_existing` to approve access to the actual session.
 3. `sap_get_session_info` shows the current transaction and screen.
 
 ## Screen Discovery
@@ -653,6 +661,24 @@ async def _com(fn):
     )
 
 
+async def _com_write(c, fn):
+    """Consume this call's approval and recheck inside the same COM job as the action."""
+    approval = WRITE_APPROVAL.get()
+    if approval is None or approval.controller is not c:
+        raise ToolError("No user approval for this SAP action. Nothing executed.")
+
+    def checked():
+        if approval.used:
+            raise ToolError("Action approval already used. Nothing executed again.")
+        if c.action_target() != approval.target:
+            raise ToolError("SAP session or screen changed after approval. Nothing executed.")
+        # Consumed before sending: a transient failure must not repeat an uncertain write.
+        approval.used = True
+        return fn()
+
+    return await _com(checked)
+
+
 def _note_cap(result, requested: int, capped: int):
     """Say so when a tool lowered a row/node limit to config.max_table_rows."""
     if isinstance(result, dict) and capped < requested:
@@ -715,7 +741,7 @@ def _forget_when_session_ends(ctx: Context, key) -> None:
         manager = _session_mgr
         if manager is None:
             return
-        close_owned = not config.detach_on_exit
+        close_owned = False  # teardown is never an approved SAP action
         try:
             await asyncio.get_running_loop().run_in_executor(
                 manager.executor, lambda: manager.forget(key, close_owned))
@@ -764,7 +790,7 @@ def active_confirmation_points(ctx: Context) -> set[str]:
     """Return the confirmation points active for the calling session.
 
     Effective set = server floor (``--confirm``) + session-added points +
-    the always-on ``save`` point.
+    the always-on ``save``, ``attach`` and ``all_writes`` points.
     """
     session_points: set[str] = set()
     if _session_mgr is not None:
@@ -808,6 +834,12 @@ def precheck_before_confirmation(tool_name: str, args,
         raise ToolError(f"Error calling tool '{tool_name}': {exc}") from exc
 
 
+async def prepare_action(ctx: Context):
+    c = _ctrl(ctx)
+    target = await _com(c.action_target)
+    return c, target
+
+
 # Registered here, not next to AuditMiddleware: the gate needs the RUNNING
 # module's helpers injected as callables. Importing the server module by name
 # from the middleware instead would load a second module copy under
@@ -817,6 +849,7 @@ def precheck_before_confirmation(tool_name: str, args,
 mcp.add_middleware(ConfirmationMiddleware(
     active_points=active_confirmation_points,
     precheck=precheck_before_confirmation,
+    prepare_action=prepare_action,
 ))
 
 
@@ -1112,7 +1145,7 @@ async def _gated_save(ctx: Context, c, *, tool: str, what: str,
             return None, now
         return send(), None
 
-    result, now = await _com(recheck_and_send)
+    result, now = await _com_write(c, recheck_and_send)
     if result is None:
         log_confirmation_event(SAVE_POINT, tool, "changed")
         return _save_target_changed(subject, target, now)
@@ -1191,22 +1224,24 @@ def _to_dict(obj):
 # Connection tools
 # ===========================================================================
 
-# Not read-only (it opens a connection and logs on), but kept in the read tier
-# so the exploration profile can still log on.
-@mcp.tool(annotations=_WRITE, tags=_TAGS_READ)
+# Opening/logging on changes SAP state and has its own bootstrap approval.
+@mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
 async def sap_connect(
     system_description: str,
     ctx: Context,
     client: str | None = None,
     user: str | None = None,
     language: str | None = None,
-) -> dict:
+) -> dict | InputRequiredResult:
     """Connect to an SAP system by its name in SAP Logon Pad.
 
     Credentials are resolved from a .env file (SAP_USER, SAP_PASSWORD,
     SAP_CLIENT, SAP_LANGUAGE) so passwords never appear in MCP tool calls.
     Parameters provided here override the .env values (except password).
-    If SAP is already open and logged in, use sap_connect_existing instead."""
+    Requires --enable-writes and user approval. After opening the connection,
+    returns binding_pending: call sap_connect_existing to approve actual
+    session access. If SAP is already logged in, use that tool directly."""
+    _check_write(ctx)
     c = _ctrl(ctx)
     kwargs: dict[str, str] = {"system_description": system_description}
     # Resolve credentials: explicit param > env var > omit
@@ -1216,7 +1251,33 @@ async def sap_connect(
     kwargs["password"] = os.environ.get("SAP_PASSWORD") or None
     # Strip None values so controller uses its own defaults
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
-    return _to_dict(await _com(lambda: c.connect(**kwargs)))
+    shown = {k: v for k, v in kwargs.items() if k != "password"}
+    try:
+        answer = await ask_user(
+            ctx, points="all_writes", tool="sap_connect", gate="open_connection",
+            message=("Open and log on to an SAP connection? " + json.dumps(shown)
+                     + "\nAccess: connection creation only. Actual session access will "
+                     "require a separate attachment approval after logon."),
+            response_title="Yes, open connection", can_ask=True, shown=shown,
+        )
+    except McpError as exc:
+        raise ToolError(
+            f"Connection approval unavailable. Nothing opened.{NO_DIALOGS_NOTE}"
+        ) from exc
+    if isinstance(answer, Ask):
+        return answer.result
+    if not answer.yes:
+        raise ToolError("Connection creation declined. Nothing opened." + answer.note)
+
+    def open_and_detach():
+        try:
+            return _to_dict(c.connect(**kwargs))
+        finally:
+            c.disconnect(close_owned=False)
+
+    info = await _com(open_and_detach)
+    return {**info, "binding_pending": True, "confirmed_by_user": True,
+            "message": "Logon opened; use sap_connect_existing to approve the actual session."}
 
 
 # "DEV(2)/100 " in front of a window title: the system, session number and
@@ -1247,7 +1308,11 @@ def _attach_candidates(connections: list) -> list[dict]:
         for sess in conn.get("sessions", []):
             if "error" in sess or not sess.get("system"):
                 continue
-            candidates.append({**sess, "connection_index": conn["index"]})
+            try:
+                identity = validate_identity(sess)
+            except Exception:
+                continue  # missing identity is never selectable
+            candidates.append({**sess, "identity": identity, "connection_index": conn["index"]})
     return candidates
 
 
@@ -1311,16 +1376,16 @@ async def _pick_session(ctx: Context, candidates: list[dict],
             ctx, points=ATTACH_POINT, tool="sap_connect_existing",
             message=message, response_type=options,
             response_title="SAP session", is_yes=is_option, is_valid=is_option,
-            gate="attach", can_ask=True, shown=options,
+            gate="attach", can_ask=True,
+            shown={"options": options, "identities": [s["identity"] for s in candidates],
+                   "access": "read-only" if config.read_only else "writes with approval"},
         )
     except McpError as exc:
         log_confirmation_event(ATTACH_POINT, "sap_connect_existing",
                                "unsupported_client")
         raise ValueError(
             "The 'attach' confirmation point is on, but this client cannot "
-            "show the session picker. Ask the user in the chat which SAP "
-            "system to use, then call sap_connect_existing(system='SID') "
-            "(or system='SID/client')."
+            "show the session picker. Nothing was attached." + NO_DIALOGS_NOTE
         ) from exc
     except ToolError:  # an approval already used: ask_user logged it
         raise
@@ -1345,114 +1410,50 @@ async def _pick_session(ctx: Context, candidates: list[dict],
 @mcp.tool(annotations=_READ_ONLY, tags=_TAGS_READ)
 async def sap_connect_existing(
     ctx: Context,
-    connection_index: int = 0,
-    session_index: int = 0,
+    connection_index: int | None = None,
+    session_index: int | None = None,
     system: str | None = None,
 ) -> dict | InputRequiredResult:
-    """Connect to an already open SAP session. Use this when SAP is already logged in.
+    """Attach only after the user approves the actual SAP session and access level.
 
-    This is the most common starting point. connection_index=0 and session_index=0
-    connect to the first open session. Also attaches to SAP Business Client /
-    embedded SAP GUI sessions. Indexes come from sap_list_connections; a
-    connection with scripting_disabled=true cannot be attached.
-
-    system: pass it only when the user named the SAP system, as 'DEV' or
-    'DEV/100' (system/client). One open session on it is attached; several,
-    or none, return an error that lists what is open. The indexes are then
-    ignored.
-
-    With the 'attach' confirmation point on, the user picks the session in a
-    dialog unless `system` names exactly one open session. The response
-    says how it was chosen (`chosen_by`: named, dialog or index)."""
+    Optional system (DEV or DEV/100) and indexes filter the session picker;
+    even one matching session requires approval. Missing identity or an
+    unsupported confirmation client refuses attachment. A new logon/window
+    always needs a new approval.
+    """
     c = _ctrl(ctx)
-    attach_point = ATTACH_POINT in active_confirmation_points(ctx)
-
-    if system is None and not attach_point:
-        info = _to_dict(await _com(
-            lambda: c.connect_to_existing_session(connection_index, session_index)
-        ))
-        session_id = await _com(lambda: getattr(getattr(c, "_session", None),
-                                                "Id", None))
-        chosen = {"system": info.get("system_name"), "client": info.get("client"),
-                  "user": info.get("user"), "id": session_id}
-        log_attach_event(chosen, "index")
-        return {**info, "chosen_by": "index"}
-
     candidates = _attach_candidates(await _com(c.list_connections))
-    chosen_by = "dialog"
     if system is not None:
         sid, client = _parse_system(system)
-        matches = [s for s in candidates
-                   if str(s.get("system", "")).upper() == sid
-                   and (client is None or str(s.get("client", "")) == client)]
-        if not matches:
-            raise ValueError(
-                f"No open session on {system}. Open sessions: "
-                f"{_candidate_summary(candidates)}"
-            )
-        if len(matches) == 1:
-            pick, chosen_by = matches[0], "named"
-        elif attach_point:
-            pick = await _pick_session(
-                ctx, matches,
-                f"Several sessions are open on {system}. Attach the agent to "
-                "which one?",
-            )
-            if isinstance(pick, Ask):
-                return pick.result
-        else:
-            raise ValueError(
-                f"{len(matches)} sessions are open on {system}: "
-                f"{_candidate_summary(matches)}. Ask the user which one, then "
-                "call sap_connect_existing with its connection_index and "
-                "session_index (without system)."
-            )
-    else:
-        if not candidates:
-            raise ValueError(
-                "No SAP session is open that can be attached (none open, or "
-                "SAP GUI Scripting is disabled on the server)."
-            )
-        pick = await _pick_session(
-            ctx, candidates, "Attach the agent to which SAP session?",
-        )
-        if isinstance(pick, Ask):
-            return pick.result
-
-    # The pick is a position from the listing made before the dialog (or the
-    # name lookup). If sessions opened or closed meanwhile, that position can
-    # now hold another session: check what was attached before using it.
-    # Attaching, the check and the detach are one COM call, so no other tool
-    # call (a parallel one) can run on the session before it is checked.
-    def attach_checked():
-        info = _to_dict(c.connect_to_existing_session(pick["connection_index"],
-                                                      pick["index"]))
-        attached = {
-            "id": getattr(getattr(c, "_session", None), "Id", None),
-            "system": info.get("system_name"),
-            "client": info.get("client"),
-            "user": info.get("user"),
-            "session_number": info.get("session_number"),
-        }
-        changed = [
-            key for key in ("id", "system", "client", "user", "session_number")
-            if pick.get(key) is not None and attached.get(key) is not None
-            and str(pick[key]) != str(attached[key])
-        ]
-        if changed:
-            c.disconnect()  # attached, not opened: nothing is closed
-        return info, attached, changed
-
-    info, attached, changed = await _com(attach_checked)
-    if changed:
+        candidates = [s for s in candidates if s["system"].upper() == sid
+                      and (client is None or s["client"] == client)]
+    if connection_index is not None:
+        candidates = [s for s in candidates if s["connection_index"] == connection_index]
+    if session_index is not None:
+        candidates = [s for s in candidates if s["index"] == session_index]
+    if not candidates:
         raise ValueError(
-            "The open SAP sessions changed while the session was being chosen: "
-            f"{_attach_label(pick)} was picked, but that position now holds "
-            f"{_attach_label({**pick, **attached})}. Nothing was attached; "
-            "call sap_connect_existing again."
+            "No SAP session is open that matches with a complete, verifiable identity."
         )
-    log_attach_event(attached, chosen_by)
-    return {**info, "chosen_by": chosen_by}
+    access = "read-only" if config.read_only else "writes enabled; every action needs approval"
+    pick = await _pick_session(
+        ctx, candidates, f"Approve attachment to an SAP session. Requested access: {access}.",
+    )
+    if isinstance(pick, Ask):
+        return pick.result
+
+    def attach_checked():
+        try:
+            info = _to_dict(c.connect_to_existing_session(pick["connection_index"], pick["index"]))
+            c.approve_binding(pick["identity"])
+            return info
+        except Exception:
+            c.disconnect(close_owned=False)
+            raise
+
+    info = await _com(attach_checked)
+    log_attach_event(pick["identity"], "dialog")
+    return {**info, "chosen_by": "dialog", "access": access, "confirmed_by_user": True}
 
 
 @mcp.tool(annotations=_READ_ONLY, tags=_TAGS_READ)
@@ -1498,7 +1499,7 @@ async def sap_execute_transaction(tcode: str, ctx: Context) -> dict:
     _check_write(ctx)
     _enforce_transaction_policy(tcode)
     c = _ctrl(ctx)
-    return await _com(lambda: c.execute_transaction(tcode))
+    return await _com_write(c, lambda: c.execute_transaction(tcode))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -1540,7 +1541,7 @@ async def sap_send_key(
             what=f"send '{key}' which triggers Save (F11)",
             subject={"key": key}, send=lambda: c.send_vkey(vkey),
         )
-    return await _com(lambda: c.send_vkey(vkey))
+    return await _com_write(c, lambda: c.send_vkey(vkey))
 
 
 @mcp.tool(annotations=_READ_ONLY, tags=_TAGS_READ)
@@ -1607,7 +1608,7 @@ async def sap_set_field(field_id: str, value: str, ctx: Context) -> dict:
     _check_write(ctx)
     _check_okcode_bypass(field_id, value)
     c = _ctrl(ctx)
-    return await _com(lambda: c.set_field(field_id, value))
+    return await _com_write(c, lambda: c.set_field(field_id, value))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -1637,17 +1638,9 @@ async def sap_press_button(button_id: str, ctx: Context) -> dict | InputRequired
             send=lambda: c.press_button(button_id),
         )
 
-    def plan_or_press():
-        # One COM job, as before, unless the button answers a popup that
-        # needs the user: then stop after the read.
-        plan = c.plan_popup_button(button_id)
-        if plan is not None:
-            return plan, None
-        return None, c.press_button(button_id)
-
-    plan, result = await _com(plan_or_press)
-    if result is not None:
-        return result
+    plan = await _com(lambda: c.plan_popup_button(button_id))
+    if plan is None:
+        return await _com_write(c, lambda: c.press_button(button_id))
     cancellation = await _confirm_popup_save(ctx, plan, "sap_press_button")
     if isinstance(cancellation, Ask):
         return cancellation.result
@@ -1660,7 +1653,7 @@ async def sap_press_button(button_id: str, ctx: Context) -> dict | InputRequired
             return {"button_id": button_id, "error": changed}
         return c.press_button(button_id)
 
-    result = await _com(recheck_and_press)
+    result = await _com_write(c, recheck_and_press)
     if "error" not in result:
         result["confirmed_by_user"] = True
     return result
@@ -1675,7 +1668,7 @@ async def sap_select_menu(menu_id: str, ctx: Context) -> dict:
     Returns screen info after selection so you can detect navigation."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.select_menu(menu_id))
+    return await _com_write(c, lambda: c.select_menu(menu_id))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -1686,7 +1679,7 @@ async def sap_select_checkbox(checkbox_id: str, ctx: Context, selected: bool = T
     type_filter='GuiCheckBox' to find checkbox IDs."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.select_checkbox(checkbox_id, selected))
+    return await _com_write(c, lambda: c.select_checkbox(checkbox_id, selected))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -1697,7 +1690,7 @@ async def sap_select_radio_button(radio_id: str, ctx: Context) -> dict:
     to find radio button IDs on the current screen."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.select_radio_button(radio_id))
+    return await _com_write(c, lambda: c.select_radio_button(radio_id))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -1710,7 +1703,7 @@ async def sap_select_combobox_entry(combobox_id: str, key_or_value: str, ctx: Co
     way."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.select_combobox_entry(combobox_id, key_or_value))
+    return await _com_write(c, lambda: c.select_combobox_entry(combobox_id, key_or_value))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -1721,7 +1714,7 @@ async def sap_select_tab(tab_id: str, ctx: Context) -> dict:
     Tab IDs typically look like 'wnd[0]/usr/tabsTABSTRIP/tabpTAB01'."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.select_tab(tab_id))
+    return await _com_write(c, lambda: c.select_tab(tab_id))
 
 
 @mcp.tool(annotations=_READ_ONLY, tags=_TAGS_READ)
@@ -1772,7 +1765,7 @@ async def sap_set_batch_fields(
     for fid, val in fields.items():
         _check_okcode_bypass(fid, str(val))
     c = _ctrl(ctx)
-    return await _com(
+    return await _com_write(c,
         lambda: c.set_batch_fields(
             fields, skip_readonly=skip_readonly, validate=validate,
             verbose=verbose, validate_partial=validate_partial,
@@ -1799,7 +1792,7 @@ async def sap_set_textedit(textedit_id: str, text: str, ctx: Context) -> dict:
     # set_textedit writes .Text on any element Id, the command field included.
     _check_okcode_bypass(textedit_id, text)
     c = _ctrl(ctx)
-    return await _com(lambda: c.set_textedit(textedit_id, text))
+    return await _com_write(c, lambda: c.set_textedit(textedit_id, text))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -1811,14 +1804,14 @@ async def sap_set_focus(element_id: str, ctx: Context) -> dict:
     sending keys with sap_send_key."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.set_focus(element_id))
+    return await _com_write(c, lambda: c.set_focus(element_id))
 
 
 # ===========================================================================
 # Table tools
 # ===========================================================================
 
-@mcp.tool(annotations=_READ_ONLY, tags=_TAGS_READ)
+@mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE | _TAGS_READ)
 async def sap_read_table(
     table_id: str,
     ctx: Context,
@@ -1826,9 +1819,13 @@ async def sap_read_table(
     columns: str = "",
     columns_only: bool = False,
     start_row: Optional[int] = None,
+    allow_scroll: bool = False,
 ) -> dict:
     """Read rows from a table on the current screen — ALV grid (report/list
     output) or TableControl (SM30 maintenance view, customizing screens).
+
+    No scrolling by default: only currently rendered rows are read. Set
+    allow_scroll=true to page (requires --enable-writes and action approval).
 
     Auto-detects the table type. The response includes a 'table_type' field
     ('GuiGridView' for ALV or 'GuiTableControl') so you know which
@@ -1862,11 +1859,17 @@ async def sap_read_table(
     SAP's form ("1,2,4-8,10") with selected_row_count, selected_cells,
     selected_columns."""
     c = _ctrl(ctx)
+    if allow_scroll and not columns_only:
+        _check_write(ctx)
     capped = min(max_rows, config.max_table_rows)
-    return _note_cap(await _com(lambda: c.read_table(
-        table_id, capped, columns=columns,
-        columns_only=columns_only, start_row=start_row,
-    )), max_rows, capped)
+    def read():
+        return c.read_table(
+            table_id, capped, columns=columns,
+            columns_only=columns_only, start_row=start_row, allow_scroll=allow_scroll,
+        )
+    result = (await _com_write(c, read) if allow_scroll and not columns_only
+              else await _com(read))
+    return _note_cap(result, max_rows, capped)
 
 
 @mcp.tool(annotations=_READ_ONLY, tags=_TAGS_READ)
@@ -1890,7 +1893,7 @@ async def sap_press_alv_toolbar_button(grid_id: str, button_id: str, ctx: Contex
     function_code); pick one with sap_select_alv_context_menu_item."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.press_alv_toolbar_button(grid_id, button_id))
+    return await _com_write(c, lambda: c.press_alv_toolbar_button(grid_id, button_id))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -1920,7 +1923,7 @@ async def sap_select_alv_context_menu_item(
     """
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(
+    return await _com_write(c,
         lambda: c.select_alv_context_menu_item(
             grid_id, menu_item_id, toolbar_button_id, select_by
         )
@@ -1936,7 +1939,7 @@ async def sap_select_table_row(table_id: str, row: int, ctx: Context) -> dict:
     the row visible first if needed."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.select_table_row(table_id, row))
+    return await _com_write(c, lambda: c.select_table_row(table_id, row))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -1947,7 +1950,7 @@ async def sap_double_click_cell(table_id: str, row: int, column: str, ctx: Conte
     or sap_get_column_info). Works on both ALV and TableControl."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(
+    return await _com_write(c,
         lambda: c.double_click_table_cell(table_id, row, column)
     )
 
@@ -1960,7 +1963,7 @@ async def sap_modify_cell(grid_id: str, row: int, column: str, value: str, ctx: 
     a cell is changeable before attempting to modify it."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.modify_cell(grid_id, row, column, value))
+    return await _com_write(c, lambda: c.modify_cell(grid_id, row, column, value))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -1970,7 +1973,7 @@ async def sap_set_current_cell(grid_id: str, row: int, column: str, ctx: Context
     Useful before pressing toolbar buttons that act on the current cell."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.set_current_cell(grid_id, row, column))
+    return await _com_write(c, lambda: c.set_current_cell(grid_id, row, column))
 
 
 @mcp.tool(annotations=_READ_ONLY, tags=_TAGS_READ)
@@ -2007,7 +2010,7 @@ async def sap_scroll_table_control(table_id: str, position: int, ctx: Context) -
     say so). Cell IDs ([col,row]) count visible rows from that row."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.scroll_table_control(table_id, position))
+    return await _com_write(c, lambda: c.scroll_table_control(table_id, position))
 
 
 @mcp.tool(annotations=_READ_ONLY, tags=_TAGS_READ)
@@ -2033,7 +2036,7 @@ async def sap_select_all_table_control_columns(
     """Select or deselect all columns in a GuiTableControl. Does NOT work on ALV grids."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.select_all_table_control_columns(table_id, select))
+    return await _com_write(c, lambda: c.select_all_table_control_columns(table_id, select))
 
 
 # ---- ALV-specific tools ----
@@ -2056,7 +2059,7 @@ async def sap_press_column_header(grid_id: str, column: str, ctx: Context) -> di
     """Click a column header in an ALV grid (triggers sort). Does NOT work on GuiTableControl."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.press_column_header(grid_id, column))
+    return await _com_write(c, lambda: c.press_column_header(grid_id, column))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -2064,7 +2067,7 @@ async def sap_select_all_rows(grid_id: str, ctx: Context) -> dict:
     """Select all rows in an ALV grid. Does NOT work on GuiTableControl."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.select_all_rows(grid_id))
+    return await _com_write(c, lambda: c.select_all_rows(grid_id))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -2074,7 +2077,7 @@ async def sap_select_multiple_rows(table_id: str, rows: list[int], ctx: Context)
     Pass a list of row indices (e.g., [0, 2, 5])."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.select_multiple_rows(table_id, rows))
+    return await _com_write(c, lambda: c.select_multiple_rows(table_id, rows))
 
 
 # ---- Popup & dialog tools ----
@@ -2126,26 +2129,19 @@ async def sap_handle_popup(
 
     Returns the popup contents plus classification, requested action,
     and post-action screen/popup state when something was pressed."""
-    _check_write(ctx)
+    if action != "read":
+        _check_write(ctx)
     c = _ctrl(ctx)
-
-    def plan_or_handle():
-        # One COM job, as before, unless the press may save: then stop
-        # after the read and ask the user before pressing.
-        plan = c.plan_popup_action(action, button_text)
-        if plan.get("save_risk"):
-            return plan, None
-        return plan, c.apply_popup_plan(plan)
-
-    plan, result = await _com(plan_or_handle)
-    if result is not None:
-        return result
-    cancellation = await _confirm_popup_save(ctx, plan)
-    if isinstance(cancellation, Ask):
-        return cancellation.result
-    if cancellation is not None:
-        return cancellation
-    result = await _com(lambda: c.apply_popup_plan(plan, recheck=True))
+    plan = await _com(lambda: c.plan_popup_action(action, button_text))
+    if action == "read":
+        return await _com(lambda: c.apply_popup_plan(plan))
+    if plan.get("save_risk"):
+        cancellation = await _confirm_popup_save(ctx, plan)
+        if isinstance(cancellation, Ask):
+            return cancellation.result
+        if cancellation is not None:
+            return cancellation
+    result = await _com_write(c, lambda: c.apply_popup_plan(plan, recheck=True))
     if result.get("action") != "error":
         result["confirmed_by_user"] = True
     return result
@@ -2177,7 +2173,7 @@ async def sap_read_shell_content(shell_id: str, ctx: Context) -> dict:
     return await _com(lambda: c.read_shell_content(shell_id))
 
 
-@mcp.tool(annotations=_READ_ONLY, tags=_TAGS_READ)
+@mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE | _TAGS_READ)
 async def sap_read_list(
     ctx: Context,
     window_id: str = "wnd[0]",
@@ -2202,7 +2198,11 @@ async def sap_read_list(
       on a line (sap_set_focus) before F2 / double-click
     - is_list=false means this screen has no list: use sap_read_table"""
     c = _ctrl(ctx)
-    return await _com(
+    if scroll_to >= 0:
+        _check_write(ctx)
+    async def run(fn):
+        return await _com_write(c, fn) if scroll_to >= 0 else await _com(fn)
+    return await run(
         lambda: c.read_list(
             window_id, max_lines=max_lines, scroll_to=scroll_to, with_ids=with_ids,
         )
@@ -2242,7 +2242,7 @@ async def sap_expand_tree_node(tree_id: str, node_key: str, ctx: Context) -> dic
     to see the newly visible child nodes."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.expand_tree_node(tree_id, node_key))
+    return await _com_write(c, lambda: c.expand_tree_node(tree_id, node_key))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -2250,7 +2250,7 @@ async def sap_collapse_tree_node(tree_id: str, node_key: str, ctx: Context) -> d
     """Collapse a folder node in a tree control (e.g. SPRO/customizing tree)."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.collapse_tree_node(tree_id, node_key))
+    return await _com_write(c, lambda: c.collapse_tree_node(tree_id, node_key))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -2261,7 +2261,7 @@ async def sap_select_tree_node(tree_id: str, node_key: str, ctx: Context) -> dic
     use sap_click_tree_link on the execute icon column instead."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.select_tree_node(tree_id, node_key))
+    return await _com_write(c, lambda: c.select_tree_node(tree_id, node_key))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -2278,7 +2278,7 @@ async def sap_double_click_tree_node(tree_id: str, node_key: str, ctx: Context) 
     execute column (typically column '2')."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.double_click_tree_node(tree_id, node_key))
+    return await _com_write(c, lambda: c.double_click_tree_node(tree_id, node_key))
 
 
 @mcp.tool(annotations=_WRITE, tags=_TAGS_WRITE)
@@ -2295,7 +2295,7 @@ async def sap_double_click_tree_item(
     nodes anew: read it again before the next tree call."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(
+    return await _com_write(c,
         lambda: c.double_click_tree_item(tree_id, node_key, item_name)
     )
 
@@ -2310,7 +2310,7 @@ async def sap_click_tree_link(tree_id: str, node_key: str, item_name: str, ctx: 
     items. node_keys_changed=true means the tree numbered its nodes anew."""
     _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(
+    return await _com_write(c,
         lambda: c.click_tree_link(tree_id, node_key, item_name)
     )
 
@@ -2360,7 +2360,9 @@ async def sap_get_tree_node_children(tree_id: str, ctx: Context, node_key: str =
     if expand:
         _check_write(ctx)
     c = _ctrl(ctx)
-    return await _com(lambda: c.get_tree_node_children(
+    async def run(fn):
+        return await _com_write(c, fn) if expand else await _com(fn)
+    return await run(lambda: c.get_tree_node_children(
         tree_id, node_key, expand
     ))
 
@@ -2637,11 +2639,11 @@ async def sap_set_confirmation_points(
       only select, scroll or navigate, and they will all prompt. Under
       all_writes, sap_send_key("F11") asks twice: once for the category and
       once for the unchanged save gate.
-    - attach: sap_connect_existing lets the user pick the SAP session in a
-      dialog, unless the call names a system with exactly one open session.
+    - attach: every sap_connect_existing call requires a session-picker approval,
+      even when a system or indexes identify one session.
 
-    'save' (F11 / Save key, Save toolbar button) is always on and cannot be
-    turned off. Points set by the server's --confirm flag cannot be removed
+    'save', 'attach' and 'all_writes' are always on and cannot be turned off.
+    Points set by the server's --confirm flag cannot be removed
     either. Adding a point is silent; *removing* one asks the user first, and
     a declined removal keeps the point.
 
@@ -2667,7 +2669,7 @@ async def sap_set_confirmation_points(
 
     key = _session_key(ctx)
     _forget_when_session_ends(ctx, key)
-    floor = set(config.confirmation_floor)
+    floor = set(config.confirmation_floor) | set(MANDATORY_POINTS)
     current = _session_mgr.get_confirmation_points(key)
     # Dropping a floor point (or 'save') is a no-op, not a relaxation, so it
     # never reaches the user.
@@ -2723,7 +2725,7 @@ async def sap_set_confirmation_points(
         "points": points_with_provenance(floor, stored),
         "active": active,
         "removal_declined": declined,
-        "always_on": [SAVE_POINT],
+        "always_on": sorted(MANDATORY_POINTS),
         "settable": list(SETTABLE_POINTS),
         "message": message,
     }
@@ -2788,18 +2790,15 @@ async def sap_get_transaction_guide(
 # Session lifecycle tools
 # ===========================================================================
 
-# Read tier, so every profile can detach; but it closes the sessions this
-# server opened, so it does not claim to be read-only.
-@mcp.tool(annotations=_DESTRUCTIVE, tags=_TAGS_READ)
+# Detaching only changes local binding state; it never sends a SAP close command.
+@mcp.tool(annotations=_READ_ONLY, tags=_TAGS_READ)
 async def sap_disconnect(ctx: Context) -> dict:
-    """Disconnect from the current SAP session and release the binding.
+    """Detach and revoke the current binding. Never closes SAP windows.
 
-    Closes only the sessions this MCP session opened: the one sap_connect
-    logged on in and any /o window opened from it. Sessions that were
-    attached (via sap_connect_existing), and /o windows opened from them, are
-    detached but left open so the user can continue working manually."""
+    The user closes windows manually. Reattachment always needs approval.
+    """
     key = _session_key(ctx)
-    return await _com(lambda: _session_mgr.release(key))
+    return await _com(lambda: _session_mgr.release(key, close_owned=False))
 
 
 @mcp.resource("docs://sap-gui-guide")
@@ -2914,8 +2913,11 @@ def main():
     load_dotenv()
 
     parser = argparse.ArgumentParser(description="MCP Server for SAP GUI")
-    parser.add_argument("--read-only", action="store_true",
-                        help="Run in read-only mode (no write operations)")
+    access = parser.add_mutually_exclusive_group()
+    access.add_argument("--read-only", dest="read_only", action="store_true", default=True,
+                        help="Read-only access (default)")
+    access.add_argument("--enable-writes", dest="read_only", action="store_false",
+                        help="Enable writes; each action still requires user approval")
     parser.add_argument("--allowed-transactions", nargs="*",
                         help="Whitelist of allowed transaction codes")
     parser.add_argument("--policy-preset", choices=sorted(PRESETS),
@@ -2958,9 +2960,7 @@ def main():
                              f"(choices: {', '.join(SETTABLE_POINTS)}). "
                              "Sessions can add points but never remove these")
     parser.add_argument("--detach-on-exit", action="store_true",
-                        help="On shutdown, detach from every SAP session and "
-                             "close none, not even sessions this server "
-                             "opened with sap_connect")
+                        help="Compatibility flag: shutdown always detaches without closing SAP")
     parser.add_argument("--strict-errors", action="store_true",
                         help="Return a failed tool result (an 'error' key, "
                              "or a batch with fields that were not set) as "
@@ -3054,6 +3054,11 @@ def main():
         all_tags = {"read", "write", "destructive"}
         for tag in all_tags - allowed_tags:
             mcp.disable(tags={tag})
+        if args.profile == "exploration":
+            # Keep the read forms of mixed tools; config enforces read-only
+            # even if --enable-writes was also supplied.
+            mcp.enable(names={"sap_read_table", "sap_read_list", "sap_handle_popup",
+                              "sap_get_tree_node_children"})
         logger.info("Server profile: %s (enabled tags: %s)",
                      args.profile, ", ".join(sorted(allowed_tags)))
 

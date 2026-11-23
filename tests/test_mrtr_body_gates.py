@@ -39,13 +39,22 @@ async def _inline(fn):
 
 @pytest.fixture
 def default_config(monkeypatch):
-    monkeypatch.setattr(server, "config", server.ServerConfig())
+    monkeypatch.setattr(server, "config", server.ServerConfig(read_only=False, ))
 
 
 async def _rounds(session, tool, args, answer, between=lambda: None):
     """Ask, run *between* (SAP changes), answer; return both results."""
     first = await session.call_tool(tool, args, allow_input_required=True)
     assert isinstance(first, InputRequiredResult)
+    # These tests exercise the additional body gate after mandatory action approval.
+    if list(first.input_requests) == ["point:all_writes"]:
+        if confirmation.NO_DIALOG_MS:
+            time.sleep(confirmation.NO_DIALOG_MS / 1000 + 0.02)
+        first = await session.call_tool(
+            tool, args, input_responses={"point:all_writes": YES},
+            request_state=first.request_state, allow_input_required=True,
+        )
+        assert isinstance(first, InputRequiredResult)
     [gate] = list(first.input_requests)
     between()
     second = await session.call_tool(
@@ -65,6 +74,8 @@ def _save_controller(titles):
     A save reads it for the question, again in the answer round and once
     more just before the save is sent."""
     controller = MagicMock(Busy=False)
+    from tests.fakes import action_target
+    controller.action_target.side_effect = action_target
     controller.check_vkey.return_value = None
     controller.send_vkey.return_value = {"status": "ok"}
     controller.press_button.return_value = {"status": "ok"}
@@ -208,6 +219,8 @@ def _popup_plan(texts):
 
 async def test_popup_answer_counts_only_for_the_popup_shown(default_config):
     controller = MagicMock(Busy=False)
+    from tests.fakes import action_target
+    controller.action_target.side_effect = action_target
     plans = iter([_popup_plan(["Save changes?"]), _popup_plan(["Delete the object?"])])
     controller.plan_popup_action.side_effect = lambda action, button_text: next(plans)
     with patch.multiple(server, _ctrl=MagicMock(return_value=controller), _com=_inline):
@@ -222,6 +235,8 @@ async def test_popup_answer_counts_only_for_the_popup_shown(default_config):
 
 async def test_popup_answer_for_the_same_popup_is_pressed(default_config):
     controller = MagicMock(Busy=False)
+    from tests.fakes import action_target
+    controller.action_target.side_effect = action_target
     controller.plan_popup_action.side_effect = (
         lambda action, button_text: _popup_plan(["Save changes?"]))
     controller.apply_popup_plan.return_value = {"action": "pressed"}
@@ -237,8 +252,11 @@ async def test_popup_answer_for_the_same_popup_is_pressed(default_config):
 async def test_an_approval_from_an_earlier_round_counts_once(monkeypatch):
     # all_writes asks first, then the body asks about the save. Sending the
     # second round's sealed state again must not press another popup.
-    monkeypatch.setattr(server, "config", server.ServerConfig(confirmation_floor=["all_writes"]))
+    monkeypatch.setattr(server, "config", server.ServerConfig(
+        read_only=False, confirmation_floor=["all_writes"]))
     controller = MagicMock(Busy=False)
+    from tests.fakes import action_target
+    controller.action_target.side_effect = action_target
     plans = iter([_popup_plan(["Save changes?"])] * 2
                  + [dict(_popup_plan(["Continue?"]), save_risk=False)])
     controller.plan_popup_action.side_effect = lambda action, button_text: next(plans)
@@ -273,7 +291,8 @@ async def test_an_approval_from_an_earlier_round_counts_once(monkeypatch):
 
 
 async def test_picker_answer_counts_only_for_the_sessions_shown(monkeypatch):
-    monkeypatch.setattr(server, "config", server.ServerConfig(confirmation_floor=["attach"]))
+    monkeypatch.setattr(server, "config", server.ServerConfig(
+        read_only=False, confirmation_floor=["attach"]))
     fake = FakeController([_connections(DEV_1, DEV_2)])
     with patch.object(server, "_ctrl", return_value=fake), \
             patch.object(server, "_com", _inline):
@@ -293,7 +312,8 @@ async def test_picker_answer_counts_only_for_the_sessions_shown(monkeypatch):
 
 
 async def test_picker_attaches_the_session_picked(monkeypatch):
-    monkeypatch.setattr(server, "config", server.ServerConfig(confirmation_floor=["attach"]))
+    monkeypatch.setattr(server, "config", server.ServerConfig(
+        read_only=False, confirmation_floor=["attach"]))
     fake = FakeController([_connections(DEV_1, DEV_2)])
     with patch.object(server, "_ctrl", return_value=fake), \
             patch.object(server, "_com", _inline):
@@ -318,7 +338,7 @@ async def test_removal_over_mrtr(default_config):
         assert declined.structured_content["removal_declined"] == ["field_writes"]
         _, accepted = await _rounds(client.session, "sap_set_confirmation_points",
                                     {"points": []}, YES)
-        assert accepted.structured_content["active"] == ["save"]
+        assert accepted.structured_content["active"] == ["all_writes", "attach", "save"]
 
 
 async def test_save_from_a_script_is_refused(default_config):

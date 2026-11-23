@@ -2,6 +2,17 @@
 
 Every release and what changed for someone running the server. The [GitHub release pages](https://github.com/kts982/mcp-sap-gui/releases) also list the merged pull requests and their authors.
 
+## Unreleased
+
+### Changed
+
+- Default to read-only. `--enable-writes` is an explicit startup-only opt-in; every mutating action still requires approval. `save`, `attach` and `all_writes` are mandatory.
+- Require an approval picker for every session attachment, including named and indexed sessions. Revalidate the full logon identity on access; missing identity, session closure or replacement revokes authorization.
+- Bind action approval to the tool, arguments, session binding and screen fingerprint; recheck in the COM job immediately before execution and consume approval once.
+- Stop scrolling during table reads by default; `allow_scroll=true` and classic-list scrolling require write access and approval.
+- Opening/logging on to a connection requires approval, followed by separate attachment approval. New `/o` windows are not automatically adopted. Disconnect and shutdown leave SAP windows open.
+- Document production-role detection as a follow-up, not an implemented automatic block. Screenshot destination restrictions remain outside this change.
+
 ## 0.6.1 — 2026-11-16
 
 F11 and the Save button are sent only if the screen, system, client, user and SAP session still match the question. Responses add the screen's `buttons` and, for an ALV grid, its title and selection; `sap_read_table` names the columns, rows and cells it could not read; tree double-clicks are sent as the event the tree registered (SE19, SM34 view clusters, `/SCWM/MON`). `opentelemetry-api` 1.45.2 fixes CVE-2026-126360.

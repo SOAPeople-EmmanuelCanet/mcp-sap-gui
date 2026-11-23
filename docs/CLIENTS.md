@@ -15,7 +15,7 @@ Tested on 2026-10-28:
 | Claude desktop app, Code tab | 2.1.308 (bundled Claude Code) | 2026-07-28 | Not shown: the app declines at once, without showing anything |
 | Claude desktop app, Chat and Cowork | | 2025-11-25 | Not supported |
 
-In a client that does not show them, everything that reads works, but a save, a popup answer that may save and any call at a confirmation point are refused, and the refusal says why. Nothing is ever done without an answer. In such a client, start the server with `--read-only` so the assistant does not try. Clients not listed here (Google Antigravity, Cursor and others) are untested: try a save on a test system and see whether the question appears.
+With the unreleased security defaults, clients without usable confirmation dialogs cannot attach to SAP, including for read-only work. They also cannot execute writes or disable the mandatory gates. For an untested client, verify the attachment dialog against a test system before enabling writes.
 
 ## The launch definition
 
@@ -102,7 +102,7 @@ For one project only, put the same section in `.codex/config.toml` in that folde
 
 ## Claude desktop app
 
-The app has three tabs, and none of them shows the confirmation questions (see the table above), so use it for reading, with `--read-only`.
+The app has three tabs, and none of them shows the confirmation questions (see the table above), so the unreleased security changes refuse SAP attachment in those tabs, even with `--read-only`. The configuration below does not bypass that requirement.
 
 - **Chat and Cowork** read `%APPDATA%\Claude\claude_desktop_config.json`:
 

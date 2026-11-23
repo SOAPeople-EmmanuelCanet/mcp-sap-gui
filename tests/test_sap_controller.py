@@ -1883,6 +1883,7 @@ class TestEngineDiscovery:
                 "client": "100",
                 "session_number": 1,
                 "title": "DEV(1)/100 SAP Easy Access",
+                "identity_unavailable": True,
             }],
             "host": "saplogon",
             "rot_entry": "SAPGUI",

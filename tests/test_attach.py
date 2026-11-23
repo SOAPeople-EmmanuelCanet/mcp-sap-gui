@@ -15,13 +15,14 @@ import pytest
 from mcp_sap_gui import server
 from mcp_sap_gui.confirmation import SETTABLE_POINTS
 from mcp_sap_gui.models import SessionInfo
+from mcp_sap_gui.safety import validate_identity
 from tests.fakes import mcp_error
 
 
 def _session(index, system, client, user, tcode, number, title):
     return {"index": index, "id": f"/app/con[0]/ses[{index}]", "user": user,
             "transaction": tcode, "system": system, "client": client,
-            "session_number": number, "title": title}
+            "session_number": number, "title": title, "system_session_id": "test-logon"}
 
 
 def _connections(*sessions, disabled=False, index=0):
@@ -51,14 +52,19 @@ class FakeController:
     def list_connections(self):
         return self._connections
 
-    def disconnect(self):
+    def disconnect(self, close_owned=False):
         self.disconnected = True
         self._session = None
+
+    def approve_binding(self, expected):
+        if validate_identity(self.current) != expected:
+            raise ValueError("SAP sessions changed during approval. Nothing was attached.")
 
     def connect_to_existing_session(self, connection_index=0, session_index=0):
         self.attached.append((connection_index, session_index))
         current = self.after or self._connections
         sess = current[connection_index]["sessions"][session_index]
+        self.current = sess
         # Like the real controller: the bound session object with its Id.
         self._session = SimpleNamespace(Id=sess["id"])
         return SessionInfo(
@@ -139,11 +145,11 @@ def test_without_point_or_system_attaches_by_index_as_before(attach, caplog):
                                               session_index=1))
 
     assert controller.attached == [(0, 1)]
-    assert result["chosen_by"] == "index"
-    assert ctx.prompts == []
+    assert result["chosen_by"] == "dialog"
+    assert len(ctx.prompts) == 1
     events = _attach_events(caplog)
     assert events[-1]["event"] == "attach"
-    assert events[-1]["chosen_by"] == "index"
+    assert events[-1]["chosen_by"] == "dialog"
 
 
 def test_system_with_one_open_session_attaches_it(attach):
@@ -152,7 +158,7 @@ def test_system_with_one_open_session_attaches_it(attach):
     result = _run(server.sap_connect_existing(FakeCtx(), system="qas"))
 
     assert controller.attached == [(1, 0)]
-    assert result["chosen_by"] == "named"
+    assert result["chosen_by"] == "dialog"
     assert result["system_name"] == "QAS"
 
 
@@ -166,22 +172,17 @@ def test_system_and_client(attach):
 
 def test_system_with_several_sessions_lists_them_without_the_point(attach):
     controller = attach([_connections(DEV_1, DEV_2)])
-
-    with pytest.raises(ValueError, match="2 sessions are open on DEV") as exc:
-        _run(server.sap_connect_existing(FakeCtx(), system="DEV"))
-
-    assert "connection_index=0, session_index=1" in str(exc.value)
-    assert "Customizing: Execute Project" in str(exc.value)
-    assert controller.attached == []
+    ctx = FakeCtx(pick=1)
+    _run(server.sap_connect_existing(ctx, system="DEV"))
+    assert len(ctx.prompts[0]["choices"]) == 2
+    assert controller.attached == [(0, 1)]
 
 
 def test_system_with_no_session_lists_what_is_open(attach):
     controller = attach([_connections(DEV_1)])
 
-    with pytest.raises(ValueError, match="No open session on PRD") as exc:
+    with pytest.raises(ValueError, match="No SAP session is open"):
         _run(server.sap_connect_existing(FakeCtx(), system="PRD"))
-
-    assert "DEV (1) / 100 / TESTUSER" in str(exc.value)
     assert controller.attached == []
 
 
@@ -189,7 +190,7 @@ def test_a_disabled_connection_is_not_a_candidate(attach):
     controller = attach([_connections(DEV_1, disabled=True),
                          _connections(QAS_1, index=1)])
 
-    with pytest.raises(ValueError, match="No open session on DEV"):
+    with pytest.raises(ValueError, match="No SAP session is open"):
         _run(server.sap_connect_existing(FakeCtx(), system="DEV"))
     assert controller.attached == []
 
@@ -211,7 +212,7 @@ def test_point_shows_every_session_even_one(attach, caplog):
     result = _run(server.sap_connect_existing(ctx))
 
     assert len(ctx.prompts) == 1
-    assert ctx.prompts[0]["message"] == "Attach the agent to which SAP session?"
+    assert "Requested access: read-only" in ctx.prompts[0]["message"]
     assert ctx.prompts[0]["choices"] == [
         "DEV (1) / 100 / TESTUSER - SE16 - Data Browser: Initial Screen",
     ]
@@ -229,23 +230,23 @@ def test_point_attaches_the_session_the_user_picked(attach):
                         point=True)
     ctx = FakeCtx(pick=2)
 
-    _run(server.sap_connect_existing(ctx, connection_index=0, session_index=0))
+    _run(server.sap_connect_existing(ctx))
 
     # The agent's indexes are not the user's choice: the dialog decides.
     assert len(ctx.prompts[0]["choices"]) == 3
     assert controller.attached == [(1, 0)]
 
 
-def test_point_skips_the_dialog_when_the_system_names_one_session(attach):
+def test_named_single_session_still_requires_approval(attach):
     controller = attach([_connections(DEV_1), _connections(QAS_1, index=1)],
                         point=True)
     ctx = FakeCtx()
 
     result = _run(server.sap_connect_existing(ctx, system="DEV"))
 
-    assert ctx.prompts == []
+    assert len(ctx.prompts) == 1
     assert controller.attached == [(0, 0)]
-    assert result["chosen_by"] == "named"
+    assert result["chosen_by"] == "dialog"
 
 
 def test_point_asks_among_the_sessions_of_a_named_system(attach):
@@ -255,7 +256,7 @@ def test_point_asks_among_the_sessions_of_a_named_system(attach):
 
     _run(server.sap_connect_existing(ctx, system="DEV"))
 
-    assert ctx.prompts[0]["message"].startswith("Several sessions are open on DEV")
+    assert "Requested access" in ctx.prompts[0]["message"]
     assert len(ctx.prompts[0]["choices"]) == 2
     assert controller.attached == [(0, 1)]
 
@@ -275,7 +276,7 @@ def test_client_without_dialogs_fails_closed(attach, caplog):
     controller = attach([_connections(DEV_1)], point=True)
     caplog.set_level(logging.INFO, logger="mcp_sap_gui.audit")
 
-    with pytest.raises(ValueError, match=r"system='SID'"):
+    with pytest.raises(ValueError, match="Nothing was attached"):
         _run(server.sap_connect_existing(FakeCtx(unsupported=True)))
 
     assert controller.attached == []
@@ -371,7 +372,6 @@ def test_a_session_list_that_changed_meanwhile_attaches_nothing(attach):
     with pytest.raises(ValueError, match="sessions changed") as exc:
         _run(server.sap_connect_existing(FakeCtx(pick=1)))
 
-    assert "DEV (2)" in str(exc.value) and "QAS (1)" in str(exc.value)
     assert "Nothing was attached" in str(exc.value)
     assert controller.disconnected is True
 
@@ -384,9 +384,10 @@ def test_no_call_runs_on_a_changed_session_before_the_check(attach, monkeypatch)
     bound_between_calls = []
 
     async def com(fn):
-        result = fn()
-        bound_between_calls.append(getattr(controller, "_session", None))
-        return result
+        try:
+            return fn()
+        finally:
+            bound_between_calls.append(getattr(controller, "_session", None))
 
     monkeypatch.setattr(server, "_com", com)
 

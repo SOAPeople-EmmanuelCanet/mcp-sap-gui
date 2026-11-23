@@ -1,6 +1,6 @@
 # Confirmations
 
-Some actions wait for your answer before they reach SAP. The server asks the question itself, through your MCP client, and decides on your answer: what the assistant does or says cannot get past it.
+Read-only is the default. Every attachment requires approval, and every potentially mutating action requires approval when writes are enabled at startup with `--enable-writes`. The server asks the question itself, through your MCP client, and decides on your answer: what the assistant does or says cannot get past it.
 
 ## What asks
 
@@ -9,15 +9,15 @@ Some actions wait for your answer before they reach SAP. The server asks the que
 - `F11` / the Save key, and the Save button in the toolbar (`wnd[0]/tbar[0]/btn[11]`);
 - on a popup: a Save button, Yes or OK on a popup about saving, and any answer except Cancel to a popup whose question the server cannot read (SAP shows some questions in a browser control that scripting cannot read: the question then tells you to check the SAP window).
 
-**Confirmation points** add more. Switch them on in the chat (*"ask me before every field write"*), or for every chat with the `--confirm` option:
+**`attach`, `all_writes` and `save` are mandatory and cannot be disabled.** Optional named categories can be selected in the chat (*"ask me before every field write"*), or for every chat with the `--confirm` option:
 
 | Point | What asks |
 |---|---|
 | `transactions` | Starting a transaction (`sap_execute_transaction`) |
 | `batch_fields` | Filling several fields at once (`sap_set_batch_fields`) |
 | `field_writes` | Each single write: a field, a table cell, a text editor, a checkbox, a radio button, a dropdown |
-| `all_writes` | Every tool that can change something, including ones that only select, scroll or navigate. Strict and noisy; a save then asks twice, once for the point and once for the save |
-| `attach` | Attaching to an SAP session: you pick the session from a list of every open one (system, session number, client, user, transaction, window title), unless the assistant names a system with exactly one open session |
+| `all_writes` | Always on: every action that can change something, including selecting, scrolling and navigation. A save asks twice, once for the point and once for the save |
+| `attach` | Attaching to an SAP session: you pick the session from a list of every open one (system, session number, client, user, transaction, window title), including when the assistant names a system with exactly one open session or supplies indexes; the question states the requested access level |
 
 ## What a question looks like
 
@@ -31,16 +31,16 @@ The server's text says what is about to happen and where (*"You are about to sen
 Three more rules protect the answer:
 
 - **An answer that comes back faster than a person can give one** (under 250 ms) came from the client, not from you. A no still counts, and the error says that no person saw the question; a yes is refused.
-- **An answer counts only for what the question showed.** A save goes only to the screen the question named: right before it sends the save, the server reads the screen, system, client, user and SAP session again, and if any of them changed while the question was open (you moved on in SAP GUI, a popup opened), nothing is saved and the result says `action: changed`. On MCP 2026-07-28 the server also reads SAP again when your answer arrives, for a popup and the list of sessions too. The assistant then reads the screen again and asks again if still needed.
+- **An answer counts only for what the question showed.** Every action is bound to its tool, arguments, approved session binding and screen fingerprint: right before it sends the save, the server reads the screen, system, client, user and SAP session again, and if any of them changed while the question was open (you moved on in SAP GUI, a popup opened), nothing is saved and the result says `action: changed`. On MCP 2026-07-28 the server also reads SAP again when your answer arrives, for a popup and the list of sessions too. The assistant then reads the screen again and asks again if still needed.
 - **An answer counts once.** It cannot be replayed to repeat the action.
 
 ## Clients that cannot show the questions
 
-The question has to reach you. Some clients never show it: the Claude desktop app declines at once without showing anything, and its Chat and Cowork tabs do not support the questions at all ([Clients](CLIENTS.md) has the list). There, a save and every action at a confirmation point are refused, and the refusal tells the assistant to tell you and to use a client that shows the questions. A confirmation point cannot be switched off there either, since switching it off asks too.
+The question has to reach you. Some clients never show it: the Claude desktop app declines at once without showing anything, and its Chat and Cowork tabs do not support the questions at all ([Clients](CLIENTS.md) has the list). There, attachment and every mutating action are refused, and the refusal tells the assistant to tell you and to use a client that shows the questions. A confirmation point cannot be switched off there either, since switching it off asks too.
 
 ## Switching points on and off
 
-- **In the chat:** ask the assistant, which calls `sap_set_confirmation_points`. Adding a point takes effect at once. Removing one asks you first, and if you say no, it stays.
+- **In the chat:** optional categories only; `attach`, `all_writes` and `save` stay on. Ask the assistant, which calls `sap_set_confirmation_points`. Adding a point takes effect at once. Removing one asks you first, and if you say no, it stays.
 - **For every chat:** start the server with `--confirm`, for example `--confirm field_writes transactions`. These points cannot be removed in a chat.
 - Points belong to the chat (the MCP session), not to the SAP connection: they stay after `sap_disconnect` and a later reconnect.
 
@@ -54,11 +54,10 @@ With `--audit-log`, every question and answer gets a `confirmation` line: the po
 
 ## Known gaps
 
-The server recognises a save by how it is sent, not by what it does in SAP. What a function does depends on the screen: the same code may save a document on one screen and only a selection variant on another, and a customer's own screen can use any code. So these do not ask:
+Menu items, application buttons, toolbar functions, double-clicks, keys and command-field writes all pass the mandatory action gate. Their labels do not have to identify them as Save. Save recognition remains an additional check for standard saves and risky popup responses.
 
-- A save through a menu (for example Table View → Save in SM30) or through a Save button in an ALV or application toolbar: those element IDs differ by screen and logon language, so the server cannot recognise them as a save.
-- An application button or function that posts or changes data (Execute, Activate, Post, an ALV "More Methods" entry), or a function code typed into the command field.
+Identity is rechecked on session access. Missing identity or a changed logon/session revokes authorization; even a return to the old identity requires a new attachment approval. The action fingerprint contains the active window, transaction, program, screen number and title. It does not compare every field value or lock a database transaction.
 
-To be asked before every action that can change something, switch on `all_writes`. The SAP user's authorizations remain the boundary for what can change at all.
+Table reads do not scroll by default. Request `allow_scroll=true` with writes enabled to approve scrolling. Classic-list `scroll_to` is also a mutating action. Read forms of popup and tree-child tools remain available without write approval.
 
-With the experimental `--code-mode`, a script cannot ask a question on MCP 2026-07-28: an action that needs one is refused inside the script, and the assistant has to call that tool directly.
+With experimental `--code-mode`, a script cannot ask a question on MCP 2026-07-28: attachment or write actions that need one are refused inside the script, and the assistant must call the tool directly. The SAP user's authorizations remain the boundary for what can change.

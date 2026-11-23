@@ -9,6 +9,8 @@ import pytest
 import mcp_sap_gui.server as _server_mod
 from mcp_sap_gui.session_manager import SessionManager
 
+pytestmark = pytest.mark.usefixtures("approved_action_for_direct_calls")
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -30,7 +32,7 @@ def mock_win32com():
 def srv(mock_win32com):
     """Configure the server module with a fresh SessionManager."""
     _server_mod._session_mgr = SessionManager()
-    _server_mod.config = _server_mod.ServerConfig()
+    _server_mod.config = _server_mod.ServerConfig(read_only=False, )
     yield _server_mod
 
 
@@ -121,7 +123,7 @@ class TestTransactionBlocking:
     def test_allowlist_mode(self, mock_win32com):
         """When allowed_transactions is set, only those are allowed."""
         import mcp_sap_gui.server as _srv
-        _srv.config = _srv.ServerConfig(allowed_transactions=["MM03", "VA03"])
+        _srv.config = _srv.ServerConfig(read_only=False, allowed_transactions=["MM03", "VA03"])
 
         assert _srv._is_transaction_blocked("MM03") is False
         assert _srv._is_transaction_blocked("VA03") is False
@@ -131,7 +133,7 @@ class TestTransactionBlocking:
     def test_allowlist_with_prefix(self, mock_win32com):
         """Allowlist works with /N and /O prefixes."""
         import mcp_sap_gui.server as _srv
-        _srv.config = _srv.ServerConfig(allowed_transactions=["MM03"])
+        _srv.config = _srv.ServerConfig(read_only=False, allowed_transactions=["MM03"])
 
         assert _srv._is_transaction_blocked("/NMM03") is False
         assert _srv._is_transaction_blocked("/OMM03") is False
@@ -140,7 +142,8 @@ class TestTransactionBlocking:
     def test_allowlist_normalizes_prefixed_entries(self, mock_win32com):
         """Allowed transaction config entries are normalized on load."""
         import mcp_sap_gui.server as _srv
-        _srv.config = _srv.ServerConfig(allowed_transactions=[" /nmm03 ", "/o/scwm/mon"])
+        _srv.config = _srv.ServerConfig(
+            read_only=False, allowed_transactions=[" /nmm03 ", "/o/scwm/mon"])
 
         assert _srv.config.allowed_transactions == ["MM03", "/SCWM/MON"]
         assert _srv._is_transaction_blocked("MM03") is False
@@ -149,7 +152,7 @@ class TestTransactionBlocking:
     def test_allowlist_case_insensitive(self, mock_win32com):
         """Allowlist is case-insensitive via __post_init__ normalization."""
         import mcp_sap_gui.server as _srv
-        _srv.config = _srv.ServerConfig(allowed_transactions=["mm03", "Va03"])
+        _srv.config = _srv.ServerConfig(read_only=False, allowed_transactions=["mm03", "Va03"])
 
         assert _srv._is_transaction_blocked("MM03") is False
         assert _srv._is_transaction_blocked("VA03") is False
@@ -158,7 +161,7 @@ class TestTransactionBlocking:
     def test_blocklist_case_insensitive_config(self, mock_win32com):
         """Blocklist entries are uppercased by __post_init__."""
         import mcp_sap_gui.server as _srv
-        _srv.config = _srv.ServerConfig(blocked_transactions=["su01", "Se16n"])
+        _srv.config = _srv.ServerConfig(read_only=False, blocked_transactions=["su01", "Se16n"])
 
         assert _srv._is_transaction_blocked("SU01") is True
         assert _srv._is_transaction_blocked("SE16N") is True
@@ -166,7 +169,8 @@ class TestTransactionBlocking:
     def test_blocklist_normalizes_prefixed_entries(self, mock_win32com):
         """Blocked transaction config entries are normalized on load."""
         import mcp_sap_gui.server as _srv
-        _srv.config = _srv.ServerConfig(blocked_transactions=[" /nse80 ", "/o/scwm/mon"])
+        _srv.config = _srv.ServerConfig(
+            read_only=False, blocked_transactions=[" /nse80 ", "/o/scwm/mon"])
 
         assert _srv.config.blocked_transactions == ["SE80", "/SCWM/MON"]
         assert _srv._is_transaction_blocked("SE80") is True
@@ -188,7 +192,7 @@ class TestTransactionBlocking:
         import mcp_sap_gui.server as _srv
 
         _srv._session_mgr = SessionManager()
-        _srv.config = _srv.ServerConfig(allowed_transactions=["MM03"])
+        _srv.config = _srv.ServerConfig(read_only=False, allowed_transactions=["MM03"])
         ctx = _make_mock_ctx()
 
         with pytest.raises(ValueError, match="not in the allowed transaction list"):
@@ -566,7 +570,7 @@ class TestReadOnlyMode:
         """sap_handle_popup raises in read-only mode."""
         ctx = _make_mock_ctx()
         with pytest.raises(ValueError, match="read-only"):
-            await readonly_srv.sap_handle_popup(ctx)
+            await readonly_srv.sap_handle_popup(ctx, action="confirm")
 
     # Note: sap_disconnect is intentionally NOT blocked in read-only mode.
     # Disconnecting from a session should always be allowed.
@@ -756,20 +760,20 @@ class TestToolRegistration:
             "sap_connect_existing", "sap_list_connections",
             "sap_get_session_info",
             "sap_get_screen_info", "sap_read_field",
-            "sap_get_combobox_entries", "sap_read_textedit", "sap_read_table",
+            "sap_get_combobox_entries", "sap_read_textedit",
             "sap_get_alv_toolbar", "sap_get_column_info", "sap_get_current_cell",
             "sap_get_table_control_row_info", "sap_get_cell_info",
             "sap_get_popup_window", "sap_get_toolbar_buttons",
-            "sap_read_shell_content", "sap_read_list", "sap_read_tree",
+            "sap_read_shell_content", "sap_read_tree",
             "sap_find_tree_node_by_path",
             "sap_search_tree_nodes", "sap_get_screen_elements", "sap_screenshot",
-            "sap_preview",
+            "sap_preview", "sap_disconnect",
             "sap_set_confirmation_points",
             "sap_get_workflow_guide",
             "sap_get_transaction_guide",
         }
         # Closes the SAP sessions the server opened.
-        destructive_tools = {"sap_disconnect"}
+        destructive_tools = set()
 
         for tool in tools:
             assert tool.annotations is not None, f"{tool.name} missing annotations"
@@ -798,7 +802,7 @@ class TestToolTags:
     # Session lifecycle tools whose tier is not their annotation: every
     # profile must be able to log on and detach, but neither tool is
     # read-only (sap_disconnect closes the sessions this server opened).
-    TIER_NOT_ANNOTATION = {"sap_connect": {"read"}, "sap_disconnect": {"read"}}
+    TIER_NOT_ANNOTATION = {}
 
     def test_all_tools_have_tags(self, srv):
         """Every tool has at least one tag from {read, write, destructive}."""
@@ -893,7 +897,7 @@ class TestServerProfile:
         """Validated at construction: an unrecognised profile must not
         degrade into 'no restriction at all'."""
         with pytest.raises(ValueError, match="Unknown policy profile"):
-            srv.ServerConfig(profile="superuser")
+            srv.ServerConfig(read_only=False, profile="superuser")
 
     def test_cli_profile_is_recorded_on_config(self, srv):
         argv = ["mcp-sap-gui", "--profile", "exploration"]
@@ -1510,7 +1514,7 @@ class TestServerConfig:
         from mcp_sap_gui.server import ServerConfig
         config = ServerConfig()
 
-        assert config.read_only is False
+        assert config.read_only is True
         assert config.allowed_transactions is None
         assert "SU01" in config.blocked_transactions
         assert "SE16N" in config.blocked_transactions

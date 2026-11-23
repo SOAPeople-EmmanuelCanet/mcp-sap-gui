@@ -49,7 +49,12 @@ async def test_points_set_in_one_call_gate_the_next(default_config):
         asked.append(message)
         return ElicitResult(action="decline")
 
+    server.config = server.ServerConfig(read_only=False)
     async with Client(server.mcp, elicitation_handler=decline) as client:
+        await client.call_tool("sap_get_session_info", {}, raise_on_error=False)
+        [managed] = _bindings()
+        from tests.fakes import action_target
+        managed.controller.action_target = action_target
         await client.call_tool("sap_set_confirmation_points", {"points": ["field_writes"]})
         result = await client.call_tool(
             "sap_set_field", {"field_id": "wnd[0]/usr/txtX", "value": "1"},

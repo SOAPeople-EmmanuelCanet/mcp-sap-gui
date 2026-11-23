@@ -108,11 +108,15 @@ def test_fast_popup_decline_says_so(real_threshold):
 
 def test_fast_decline_at_a_confirmation_point(real_threshold, monkeypatch):
     class Controller:
+        def action_target(self):
+            from tests.fakes import action_target
+            return action_target()
+
         def set_field(self, field_id, value):
             return {"status": "ok"}
 
     monkeypatch.setattr(server, "_ctrl", lambda ctx: Controller())
-    monkeypatch.setattr(server, "config", server.ServerConfig(
+    monkeypatch.setattr(server, "config", server.ServerConfig(read_only=False,
         confirmation_floor=["field_writes"]))
 
     async def decline_now(message, response_type, params, context):
@@ -137,6 +141,9 @@ def test_fast_attach_decline_says_so(real_threshold, monkeypatch):
                    "client": "100", "user": "TESTUSER", "transaction": "SE16",
                    "session_number": 1, "title": "DEV(1)/100 Data Browser",
                    "connection_index": 0}]
+    from mcp_sap_gui.safety import validate_identity
+    candidates[0]["system_session_id"] = "test-logon"
+    candidates[0]["identity"] = validate_identity(candidates[0])
 
     with pytest.raises(ValueError) as exc:
         asyncio.run(server._pick_session(FakeCtx("decline"), candidates, "Which?"))
@@ -172,11 +179,15 @@ def test_yes_no_prompts_are_labelled(monkeypatch):
     assert ctx.titles == ["Yes, press 'No'"]
 
     class Controller:
+        def action_target(self):
+            from tests.fakes import action_target
+            return action_target()
+
         def set_field(self, field_id, value):
             return {"status": "ok"}
 
     monkeypatch.setattr(server, "_ctrl", lambda c: Controller())
-    monkeypatch.setattr(server, "config", server.ServerConfig(
+    monkeypatch.setattr(server, "config", server.ServerConfig(read_only=False,
         confirmation_floor=["field_writes"]))
     seen = []
 
@@ -229,12 +240,16 @@ def test_fast_yes_at_a_confirmation_point_runs_nothing(real_threshold, monkeypat
     calls = []
 
     class Controller:
+        def action_target(self):
+            from tests.fakes import action_target
+            return action_target()
+
         def set_field(self, field_id, value):
             calls.append((field_id, value))
             return {"status": "ok"}
 
     monkeypatch.setattr(server, "_ctrl", lambda ctx: Controller())
-    monkeypatch.setattr(server, "config", server.ServerConfig(
+    monkeypatch.setattr(server, "config", server.ServerConfig(read_only=False,
         confirmation_floor=["field_writes"]))
 
     async def accept_now(message, response_type, params, context):
@@ -258,7 +273,7 @@ def test_fast_yes_to_removing_a_point_keeps_it(real_threshold, monkeypatch):
 
     mgr = SessionManager()
     monkeypatch.setattr(server, "_session_mgr", mgr)
-    monkeypatch.setattr(server, "config", server.ServerConfig())
+    monkeypatch.setattr(server, "config", server.ServerConfig(read_only=False, ))
     ctx = SimpleNamespace(session_id="chat-1", session=object(),
                           elicit=FakeCtx("accept", data=True).elicit)
     mgr.set_confirmation_points("chat-1", {"field_writes"})
@@ -275,6 +290,9 @@ def test_fast_pick_in_the_attach_picker_is_refused(real_threshold):
                    "client": "100", "user": "TESTUSER", "transaction": "SE16",
                    "session_number": 1, "title": "DEV(1)/100 Data Browser",
                    "connection_index": 0}]
+    from mcp_sap_gui.safety import validate_identity
+    candidates[0]["system_session_id"] = "test-logon"
+    candidates[0]["identity"] = validate_identity(candidates[0])
 
     with pytest.raises(ValueError) as exc:
         asyncio.run(server._pick_session(

@@ -20,7 +20,8 @@ Options go after the package name in the client's server configuration, for exam
 
 | Option | What it does |
 |---|---|
-| `--read-only` | Refuses every tool that can change something: field writes, buttons, transactions, keys, table and tree actions. Reading works |
+| `--read-only` | Default. Refuses every action that can change something: field writes, buttons, transactions, keys, table and tree actions. Reading works |
+| `--enable-writes` | Startup-only opt-in to SAP changes; every action still requires approval. Mutually exclusive with `--read-only` |
 | `--profile exploration\|operator\|full` | Which tools the assistant sees at all (default `full`). See [Profiles](#profiles) |
 | `--confirm POINT ...` | Confirmation points for every chat: `transactions`, `batch_fields`, `field_writes`, `all_writes`, `attach`. A chat can add points but never remove these. See [Confirmations](CONFIRMATIONS.md) |
 | `--policy-preset default\|abap-dev\|strict` | Which transactions the assistant may start (default: the preset named in the policy file, else `default`) |
@@ -28,7 +29,7 @@ Options go after the package name in the client's server configuration, for exam
 | `--allowed-transactions T ...` | Older allowlist; it restricts on top of the policy |
 | `--audit-log FILE` | Writes every tool call, question and answer as JSON lines. See [Audit log](SECURITY_GUIDE.md#audit-log) |
 | `--strict-errors` | Returns a failed result as an MCP error. See [Strict errors](#strict-errors) |
-| `--detach-on-exit` | On shutdown, leaves every SAP session open, also the ones the server opened with `sap_connect` |
+| `--detach-on-exit` | Compatibility flag: shutdown and disconnect always leave SAP windows open |
 | `--transport stdio\|http` | `stdio` (default) or streamable HTTP. See [HTTP transport](#http-transport) |
 | `--host`, `--port` | HTTP bind address and port (default `127.0.0.1:8000`) |
 | `--allowed-host HOST` | HTTP: another name clients use for this machine in the `Host` header (repeatable) |
@@ -67,10 +68,10 @@ Every tool is tagged `read` or `write`, and the profile decides which ones the a
 | Profile | Tools | What the assistant can do |
 |---|---|---|
 | `exploration` | `read` | Look only: inspect screens, read tables, take screenshots. It cannot navigate or change anything |
-| `operator` | `read`, `write` | Normal SAP work: start transactions, fill fields, press buttons. The transaction policy and the confirmation questions still apply |
+| `operator` | `read`, `write` | With `--enable-writes`: start transactions, fill fields, press buttons. The transaction policy and the confirmation questions still apply |
 | `full` | all | All tools. The default. Today the same tools as `operator`: `full` would add tools tagged `destructive`, and no tool has that tag yet |
 
-The profile applies to every chat the server serves. To be asked before writes in one chat only, use confirmation points.
+The profile applies to every chat. `exploration` always enforces read-only, even with `--enable-writes`; it exposes only the read forms of mixed table/list/popup/tree-child tools. `operator` and `full` do not enable writes by themselves. `save`, `attach` and `all_writes` are mandatory in every profile.
 
 ## Strict errors
 
@@ -87,7 +88,7 @@ uvx "mcp-sap-gui[screenshots]" --transport http --host 0.0.0.0 --port 9000 --all
 
 - A request addressed to a host name other than localhost, 127.0.0.1, the bound address or an `--allowed-host` is refused, and so is a browser request from another origin unless it is listed with `--allowed-origin`. That stops a web page from reaching the server through DNS rebinding. MCP clients send no `Origin` header and are not affected.
 - Over HTTP the server needs a client on the session-based MCP protocol (2025-11-25 or earlier, for example VS Code). A request on MCP 2026-07-28 carries no client identity, so the server could not keep one SAP session per client, and refuses it with an error that says so. stdio works with every protocol version.
-- An HTTP session that ends (the client closes it, or it is idle for 30 minutes) releases its SAP session and its confirmation points, and closes the SAP sessions the server opened for it, unless the server runs with `--detach-on-exit`.
+- An HTTP session that ends (the client closes it, or it is idle for 30 minutes) releases its SAP session and its confirmation points, and leaves SAP windows open.
 
 The HTTP transport has no authentication of its own: never make it reachable from other machines you do not control.
 

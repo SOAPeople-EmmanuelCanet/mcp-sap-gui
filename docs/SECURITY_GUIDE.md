@@ -9,8 +9,8 @@ To report a vulnerability, see [SECURITY.md](../SECURITY.md).
 | Safeguard | What it does | Set with |
 |---|---|---|
 | [Transaction policy](#transaction-policy) | Which transactions the assistant may start | `--policy-preset`, `--policy-file` |
-| [Confirmations](CONFIRMATIONS.md) | Saves always wait for your yes; confirmation points add more | `--confirm`, or in the chat |
-| [Read-only mode](CONFIGURATION.md#options) | Refuses every tool that can change something | `--read-only` |
+| [Confirmations](CONFIRMATIONS.md) | Every attachment and mutating action needs approval; Save retains its additional check | `--confirm`, or in the chat |
+| [Read-only mode](CONFIGURATION.md#options) | Default; refuses mutating actions. Writes require startup opt-in | `--enable-writes` |
 | [Profiles](CONFIGURATION.md#profiles) | Which tools the assistant sees at all | `--profile` |
 | [Audit log](#audit-log) | Every call, question and answer as JSON lines | `--audit-log` |
 | Credentials | Passwords are never a tool parameter and never reach the client, its history or the audit log | logon in SAP Logon, or `SAP_*` variables |
@@ -68,3 +68,11 @@ It is a guardrail against an assistant's mistakes, not a security boundary: a bl
 ## For Basis and security teams
 
 In short: the server is a local process on the user's own Windows PC. It attaches to SAP GUI sessions the user has already opened, through SAP's own Scripting API, and every action runs as that user, under that user's authorizations, and shows as that user's activity in SAP's logs. Scripting can be limited to named users (`S_SCR`) or to read-only on the SAP side ([Preparing SAP](SAP_SETUP.md#where-scripting-is-restricted)); on the server side, the transaction policy, read-only mode, the confirmation questions and the audit log above add control and a record of what the assistant did.
+
+## Session and action authorization
+
+Read-only is the default. `--enable-writes` is a startup setting with no runtime tool equivalent. Attachment always requires approval of the actual session and access level. `attach`, `all_writes` and `save` cannot be disabled. The backend logon ID, session number, system, client, user and GUI session ID must be present and remain unchanged; otherwise authorization is revoked.
+
+Each mutating action is approved for its tool arguments and current screen fingerprint, then rechecked immediately before execution in the COM thread. New `/o` windows require a new attachment. Disconnect and shutdown detach only. Connection creation requires approval and leaves the new session awaiting a separate attachment approval.
+
+Automatic production detection is deferred. The [README follow-up design](../README.md#production-detection-follow-up-design) describes a trusted backend lookup of SCC4 client role, denial for production and unknown classification, and the distinction between client and system roles. Do not infer production status from system names or screen labels. Screenshot export path restrictions are a separate unresolved finding.
