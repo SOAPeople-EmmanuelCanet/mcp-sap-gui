@@ -257,7 +257,7 @@ class TestServerStartup:
         monkeypatch.setenv("APPDATA", str(tmp_path))  # no per-user policy.json
         monkeypatch.delenv("MCP_SAP_GUI_POLICY_FILE", raising=False)
         monkeypatch.setattr(server, "load_dotenv", lambda *a, **k: None)
-        monkeypatch.setattr(sys, "argv", ["mcp-sap-gui", *argv])
+        monkeypatch.setattr(sys, "argv", ["zz-mcp-sap-gui", *argv])
         ran = []
         monkeypatch.setattr(server.mcp, "run", lambda *a, **k: ran.append(True))
         return ran

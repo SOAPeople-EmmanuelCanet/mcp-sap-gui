@@ -161,6 +161,10 @@ async def test_server_writes_the_bound_system_into_each_line(monkeypatch, caplog
     async with Client(server.mcp) as client:
         await client.call_tool("sap_get_session_info", {}, raise_on_error=False)
         [managed] = server._session_mgr._sessions.values()
+        # This test covers audit identity; RFC enforcement has dedicated tests.
+        managed.controller.client_classifier = SimpleNamespace(
+            check=lambda session: {"client_role": "T"}
+        )
         info = _info()
         info.SystemSessionId = "test-logon"
         managed.controller._session = SimpleNamespace(

@@ -56,7 +56,7 @@ def test_exploration_cannot_enable_writes():
 @pytest.mark.parametrize("argv,readonly", [([], True), (["--read-only"], True),
                                          (["--enable-writes"], False)])
 def test_startup_access_is_explicit(monkeypatch, argv, readonly):
-    monkeypatch.setattr("sys.argv", ["mcp-sap-gui", *argv])
+    monkeypatch.setattr("sys.argv", ["zz-mcp-sap-gui", *argv])
     monkeypatch.setattr(server, "config", server.ServerConfig())
     monkeypatch.setattr(server, "load_dotenv", lambda: None)
     monkeypatch.setattr(server, "resolve_policy_file", lambda _: None)

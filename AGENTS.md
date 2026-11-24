@@ -13,7 +13,7 @@ An MCP server (FastMCP 4.x, Python 3.11+) that drives SAP GUI for Windows throug
 - `session_manager.py`: the SAP session bound to each MCP session, and the single COM thread.
 - `confirmation.py`: confirmation points and the dialog helpers. `policy.py`: the transaction policy (presets, policy file). `audit.py`: the JSON audit log. `strict.py`: `--strict-errors`. `preview.py`: `sap_preview`. `prompts.py`: workflow guides.
 - `tests/`: pytest, no SAP GUI needed.
-- `docs/`: user documentation, one page per task; `docs/TOOLS.md` lists every tool. `README.md` is also the PyPI project page, so it links by absolute GitHub URL (`https://github.com/kts982/mcp-sap-gui/blob/master/...`); `scripts/check_docs.py` checks those links against the local files.
+- `docs/`: user documentation, one page per task; `docs/TOOLS.md` lists every tool. `README.md` is also the PyPI project page, so it links by absolute GitHub URL (`https://github.com/kts982//blob/master/...`); `scripts/check_docs.py` checks those links against the local files.
 
 ## Setup and checks
 

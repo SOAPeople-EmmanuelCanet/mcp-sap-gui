@@ -198,8 +198,10 @@ class SAPGUIControllerBase:
         self._connection = None
         self._session = None
         self.require_binding_approval = False
+        self.client_classifier = None
         self._approved_identity = None
         self._approved_session = None
+        self._approved_classification = None
         # True when the bound session is one this controller opened.
         self._owns_session = False
         # What disconnect() may close: the connection connect() opened, and
@@ -933,6 +935,7 @@ class SAPGUIControllerBase:
 
         self._approved_identity = None
         self._approved_session = None
+        self._approved_classification = None
         self._binding_generation = uuid.uuid4().hex
 
     def approve_binding(self, expected: dict) -> None:
@@ -942,6 +945,8 @@ class SAPGUIControllerBase:
         current = binding_identity(self._session)
         if current != validate_identity(expected):
             raise SAPGUIError("SAP sessions changed during approval. Nothing was attached.")
+        if self.client_classifier is not None:
+            self._approved_classification = self.client_classifier.check(self._session)
         self._approved_identity = current
         self._approved_session = self._session
 
@@ -953,11 +958,15 @@ class SAPGUIControllerBase:
             if (self._approved_identity is None or self._session is not self._approved_session
                     or current != self._approved_identity):
                 raise SAPGUIError("SAP session changed or has no attachment approval.")
+            if self.client_classifier is not None:
+                classification = self.client_classifier.check(self._session)
+                if classification != self._approved_classification:
+                    raise SAPGUIError("SAP client classification changed; attachment is revoked.")
             return current
-        except Exception:
+        except Exception as exc:
             self.revoke_binding()
             raise SAPGUIError(
-                "SAP session identity changed or is unavailable. "
+                f"SAP session authorization failed: {exc}. "
                 "Attach again with sap_connect_existing and obtain user approval."
             ) from None
 
@@ -1034,7 +1043,6 @@ class SAPGUIControllerBase:
                         "index": j,
                         "id": sess.Id,
                         "user": info.User,
-                        "transaction": info.Transaction,
                         "system": info.SystemName,
                         "client": info.Client,
                     }
@@ -1050,10 +1058,21 @@ class SAPGUIControllerBase:
                         entry_s["session_number"] = int(info.SessionNumber)
                     except Exception:
                         pass
-                    try:
-                        entry_s["title"] = str(sess.findById("wnd[0]").Text)
-                    except Exception:
-                        pass
+                    classified = self.client_classifier is None
+                    if self.client_classifier is not None:
+                        try:
+                            classification = self.client_classifier.check(sess)
+                            entry_s["client_role"] = classification["client_role"]
+                            entry_s["client_role_allowed"] = True
+                            classified = True
+                        except SAPGUIError:
+                            entry_s["client_role_allowed"] = False
+                    if classified:
+                        entry_s["transaction"] = info.Transaction
+                        try:
+                            entry_s["title"] = str(sess.findById("wnd[0]").Text)
+                        except Exception:
+                            pass
                     sessions.append(entry_s)
                 except Exception as e:
                     sessions.append(

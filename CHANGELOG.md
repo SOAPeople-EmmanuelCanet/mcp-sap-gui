@@ -10,8 +10,9 @@ Every release and what changed for someone running the server. The [GitHub relea
 - Require an approval picker for every session attachment, including named and indexed sessions. Revalidate the full logon identity on access; missing identity, session closure or replacement revokes authorization.
 - Bind action approval to the tool, arguments, session binding and screen fingerprint; recheck in the COM job immediately before execution and consume approval once.
 - Stop scrolling during table reads by default; `allow_scroll=true` and classic-list scrolling require write access and approval.
-- Opening/logging on to a connection requires approval, followed by separate attachment approval. New `/o` windows are not automatically adopted. Disconnect and shutdown leave SAP windows open.
-- Document production-role detection as a follow-up, not an implemented automatic block. Screenshot destination restrictions remain outside this change.
+- Require a fresh `RFC_READ_TABLE` lookup of `T000-CCCATEGORY` before attachment and every attached-session operation. Verify the RFC system, client, system number and application server against SAP GUI; permit only Test and Customizing clients and fail closed on every lookup or identity error.
+- Disable `sap_connect`, because the client role cannot be verified before opening/logon. Log on manually, then attach. New `/o` windows are not automatically adopted. Disconnect and shutdown leave SAP windows open.
+- Screenshot destination restrictions remain outside this change.
 
 ## 0.6.1 — 2026-11-16
 

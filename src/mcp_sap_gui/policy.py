@@ -163,7 +163,7 @@ def default_policy_path() -> str:
     base = os.environ.get("APPDATA") or os.path.join(
         os.path.expanduser("~"), ".config"
     )
-    return os.path.join(base, "mcp-sap-gui", "policy.json")
+    return os.path.join(base, "zz-mcp-sap-gui", "policy.json")
 
 
 def resolve_policy_file(cli_path: Optional[str]) -> Optional[str]:

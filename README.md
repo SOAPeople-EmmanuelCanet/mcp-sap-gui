@@ -27,6 +27,7 @@ More, with example prompts: [What it can do](https://github.com/kts982/mcp-sap-g
 - Windows with SAP GUI for Windows (8.10 verified, 8.00 works; [SAP GUI versions](https://github.com/kts982/mcp-sap-gui/blob/master/docs/SAP_GUI_VERSIONS.md)), and SAP Logon running.
 - SAP GUI Scripting allowed in SAP GUI and on the SAP system: [Preparing SAP](https://github.com/kts982/mcp-sap-gui/blob/master/docs/SAP_SETUP.md).
 - [uv](https://docs.astral.sh/uv/), which runs the server from PyPI.
+- SAP NetWeaver RFC SDK, the `rfc` extra, a direct RFC destination and narrow Basis authorizations for the mandatory [client-role check](https://github.com/kts982/mcp-sap-gui/blob/master/docs/RFC_CLIENT_CLASSIFICATION.md).
 - An MCP client that shows the server's confirmation questions, including the initial attachment (listed below).
 
 ## Quick start
@@ -36,11 +37,11 @@ More, with example prompts: [What it can do](https://github.com/kts982/mcp-sap-g
 
    ```text
    Command:   uvx
-   Arguments: mcp-sap-gui[screenshots]
+   Arguments: mcp-sap-gui[rfc,screenshots] --rfc-destination DEV/100/00/dev.example.invalid=MCP_DEV_100
    Transport: stdio
    ```
 
-   In the Claude Code CLI, for example: `claude mcp add sap-gui --scope user -- uvx "mcp-sap-gui[screenshots]"`. Every client: [Clients](https://github.com/kts982/mcp-sap-gui/blob/master/docs/CLIENTS.md).
+   Replace the example backend and destination with values supplied by Basis. In the Claude Code CLI, for example: `claude mcp add sap-gui --scope user -- uvx "mcp-sap-gui[rfc,screenshots]" --rfc-destination "DEV/100/00/dev.example.invalid=MCP_DEV_100"`. Every client: [Clients](https://github.com/kts982/mcp-sap-gui/blob/master/docs/CLIENTS.md).
 3. Log on to SAP in SAP Logon, then ask: *"Connect to my open SAP session and tell me what system I'm on."*
 
 Step by step, including updating to a new release: [Getting started](https://github.com/kts982/mcp-sap-gui/blob/master/docs/GETTING_STARTED.md).
@@ -48,6 +49,7 @@ Step by step, including updating to a new release: [Getting started](https://git
 ## Safety
 
 - **Read-only by default:** only `--enable-writes` at startup permits changes.
+- **Productive clients are blocked:** a fresh standard RFC lookup verifies the actual GUI backend and SCC4 client role before attachment and every operation. Only Test and Customizing roles are accepted. [RFC setup](https://github.com/kts982/mcp-sap-gui/blob/master/docs/RFC_CLIENT_CLASSIFICATION.md).
 - **Every attachment and potentially mutating action requires approval**, including named sessions, menus, keys and toolbar actions: [Confirmations](https://github.com/kts982/mcp-sap-gui/blob/master/docs/CONFIRMATIONS.md).
 - **A transaction policy** decides which transactions the assistant may start; read-only mode and profiles limit it further.
 - **An audit log** records every call, question and answer.
@@ -60,13 +62,15 @@ Details for admins, Basis and security teams: [Security guide](https://github.co
 These changes describe the unreleased source checkout; check your installed release before relying on them. From the repository root, start with read-only access:
 
 ```powershell
-uv run python -m mcp_sap_gui.server
+uv run python -m mcp_sap_gui.server `
+  --rfc-destination DEV/100/00/dev.example.invalid=MCP_DEV_100
 ```
 
 To permit writes, explicitly change the MCP client's startup arguments and restart the server:
 
 ```powershell
-uv run python -m mcp_sap_gui.server --enable-writes
+uv run python -m mcp_sap_gui.server --enable-writes `
+  --rfc-destination DEV/100/00/dev.example.invalid=MCP_DEV_100
 ```
 
 `--read-only` remains an explicit alias for the default and cannot be combined with `--enable-writes`. No tool call can enable writes. Enabling writes does **not** disable approval prompts. The `attach`, `all_writes` and `save` confirmation points are mandatory and cannot be removed by the assistant or through `sap_set_confirmation_points`.
@@ -75,11 +79,12 @@ uv run python -m mcp_sap_gui.server --enable-writes
 |---|---|
 | Session selection | `sap_connect_existing` always shows an approval picker, even for one named or indexed session. It identifies the actual system, client, SAP user and requested access level. No usable dialog means no attachment. |
 | Session identity | Approval records the system, client, user, GUI session ID, backend `SystemSessionId` and session number. Identity is rechecked on session access. Closure, replacement, missing identity or a new logon invalidates authorization and requires reattachment. |
+| Backend classification | A direct startup-configured RFC destination must match the GUI system, client, system number and application server. `RFC_READ_TABLE` reads `T000-CCCATEGORY` afresh; only `T` and `C` proceed. Missing routes, production/unknown roles and lookup failures deny access. |
 | Action approval | Approval is tied to the tool, arguments, session binding and screen fingerprint: active window, transaction, program, screen number and title. The target is checked again in the same COM job as execution. Approval cannot be reused for another action. |
 | Write coverage | Buttons, menus, keys, toolbar actions, double-clicks, field writes, selections, scrolling and popup responses require approval when writes are enabled. This does not depend on recognizing a Save label. |
 | Save and popup actions | The existing Save and save-risk popup checks remain in addition to mandatory action approval. F11 and the standard Save button therefore prompt twice. |
 | Table and list reads | `sap_read_table` does not scroll by default. Set `allow_scroll=true` to request approved scrolling with writes enabled. `sap_read_list(scroll_to=...)` also requires write access and approval. |
-| Opening a connection | `sap_connect` requires writes enabled and approval to open/log on. It then detaches and returns `binding_pending`; use `sap_connect_existing` to approve access to the actual session. |
+| Opening a connection | `sap_connect` is disabled because classification cannot happen before logon. Log on manually, then use `sap_connect_existing`. |
 | New SAP windows | A window opened with `/o` is not automatically adopted. Attach to it explicitly and approve the new binding. |
 | Disconnect and shutdown | Revoke/detach only; leave SAP windows open. Close them manually in SAP GUI. `--detach-on-exit` remains a compatibility flag. |
 
@@ -87,15 +92,15 @@ Optional `--confirm field_writes transactions` settings still select named appro
 
 The screen fingerprint detects a changed target; it is not a database transaction lock or a complete comparison of every field value. SAP authorizations and business validations remain necessary. This change does not implement the separate screenshot destination restriction reported in the security review.
 
-### Production detection: follow-up design
+### Production-client blocking
 
-**Automatic production blocking is not implemented in this change.** Read-only access and approval requirements apply to every system; they do not classify it as production or nonproduction.
+The source checkout implements fail-closed client classification through standard RFC, with no custom backend code. [Configure the RFC routes, connector and Basis authorizations](https://github.com/kts982/mcp-sap-gui/blob/master/docs/RFC_CLIENT_CLASSIFICATION.md).
 
 SAP maintains the client role in **SCC4**, stored in `T000-CCCATEGORY` (`P` for Production). This classifies a **client**, not necessarily every client in a system. SAP's documented `GuiSessionInfo` properties expose identity information but no production-role property. A system name, SAP Logon description, window title or GUI colour is not a reliable production indicator. See [SAP client roles](https://learning.sap.com/courses/technical-implementation-and-operation-ii-of-sap-s-4hana-and-sap-business-suite/client-concept-1) and the [SAP GUI Scripting API](https://help.sap.com/doc/9215986e54174174854b0af6bb14305a/800.06/en-US/sap_gui_scripting_api.pdf).
 
-The proposed follow-up is a narrow, authenticated backend lookup that returns the actual system, client and configured client role. Its endpoint and credentials must come from trusted startup configuration, not tool arguments or SAP screen content. Match its response to the GUI session identity; block production, missing/unknown roles, lookup failures and identity mismatches. Only metadata needed for classification should be read before the decision; business reads, screenshots and writes must remain blocked. If policy forbids **all clients** on a production system, supplement the client role with an administrator-maintained system classification.
+The server reads the role before attachment and every attached-session operation. It permits only Test (`T`) and Customizing (`C`) clients. The RFC connection identity must match the GUI session, and the GUI identity is checked again after the lookup. No result is cached.
 
-Until that integration exists, use a dedicated account with minimal SAP authorizations and restrict scripting on production through SAP administration. Client-role configuration must itself be maintained correctly; it is not proof that a system contains no production data.
+Use a dedicated RFC account restricted to `RFC_READ_TABLE` and display of `T000`. Client-role configuration must itself be maintained correctly; a client-level role is not proof that the entire SAP system contains no production data.
 
 ## Which clients show the confirmation questions
 
@@ -113,6 +118,7 @@ Tested on 2026-10-28: the **Claude Code CLI**, the **GitHub Copilot CLI**, **VS 
 | [Preparing SAP](https://github.com/kts982/mcp-sap-gui/blob/master/docs/SAP_SETUP.md) | Enabling scripting, also for named users or read-only; SAP Business Client |
 | [Configuration](https://github.com/kts982/mcp-sap-gui/blob/master/docs/CONFIGURATION.md) | Every option and environment variable; profiles, HTTP, code mode |
 | [Security guide](https://github.com/kts982/mcp-sap-gui/blob/master/docs/SECURITY_GUIDE.md) | Safeguards, the transaction policy, the audit log, a recommended setup |
+| [RFC client classification](https://github.com/kts982/mcp-sap-gui/blob/master/docs/RFC_CLIENT_CLASSIFICATION.md) | Blocking productive clients through standard RFC, including Basis setup |
 | [SAP GUI versions](https://github.com/kts982/mcp-sap-gui/blob/master/docs/SAP_GUI_VERSIONS.md) | Which SAP GUI releases work, and how |
 | [Tools](https://github.com/kts982/mcp-sap-gui/blob/master/docs/TOOLS.md) | Every tool the assistant can call |
 | [CHANGELOG](https://github.com/kts982/mcp-sap-gui/blob/master/CHANGELOG.md) | What changed in each release |

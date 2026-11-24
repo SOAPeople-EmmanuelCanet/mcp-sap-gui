@@ -29,7 +29,7 @@ A confirmation point is a category of write operations that waits for the user's
 | `batch_fields` | `sap_set_batch_fields` |
 | `field_writes` | `sap_set_field`, `sap_modify_cell`, `sap_set_textedit`, `sap_select_checkbox`, `sap_select_radio_button`, `sap_select_combobox_entry` |
 | `all_writes` | Always on, argument-aware for mixed read/write tools: many write tools only select, scroll or navigate. Under `all_writes`, `sap_send_key("F11")` prompts twice — once for the category, once for the unchanged save gate |
-| `attach` | `sap_connect_existing`: the user picks the SAP session in a choice dialog listing every open session (system, session number, client, user, transaction, window title), even for a single named/indexed session. Declining or unsupported dialogs attach nothing; there is no name-based fallback |
+| `attach` | `sap_connect_existing`: after RFC classification, the user picks an allowed session (system, session number, client, user, transaction, window title), even for a single named/indexed session. Declining or unsupported dialogs attach nothing |
 
 Activate points per session with `sap_set_confirmation_points`, or for every session with `--confirm POINT [POINT ...]`. Adding a point is silent; removing a session point asks the user first and a declined removal keeps it. Points set by `--confirm` and the mandatory `save`, `attach` and `all_writes` points can never be removed.
 
@@ -43,13 +43,13 @@ Menu paths, ALV/application-toolbar buttons, application functions that post and
 
 ## Connection
 
-Preferred usage: use `sap_connect_existing` when the user is already logged in to SAP. Use `sap_connect` mainly for SSO flows or to open the SAP login screen before the user completes manual login.
+Log on manually, then use `sap_connect_existing`. Attachment and later operations require a successful [RFC client-role check](RFC_CLIENT_CLASSIFICATION.md).
 
 | Tool | Description |
 |------|-------------|
-| `sap_connect` | With writes enabled and approval, open/log on by SAP Logon entry name; then detach and return `binding_pending`. Call `sap_connect_existing` for actual session approval. Credentials resolved from `.env` file — passwords never appear in MCP |
-| `sap_connect_existing` | Attach to an already open SAP session (SAP Logon or SAP Business Client), by `connection_index` / `session_index` or by `system` (`DEV` or `DEV/100`) when the user named it: matching sessions are offered in an approval picker, even when there is only one. The response says how the session was chosen (`chosen_by`), and the audit log records an `attach` event |
-| `sap_list_connections` | List all currently open SAP connections and sessions, incl. SAP Business Client; reports `host` and `scripting_disabled`, and per session its system, client, user, transaction, `session_number` and window `title` |
+| `sap_connect` | Disabled because the backend client role cannot be checked before opening/logon. Log on manually, then use `sap_connect_existing` |
+| `sap_connect_existing` | Attach to an already open SAP session after approval and a fresh RFC role check. Production, unknown/unrouted clients and identity mismatches are refused. Named/indexed sessions still require the picker |
+| `sap_list_connections` | Classify open SAP sessions and list identity plus `client_role_allowed`. Transaction and window title are read only for sessions that pass RFC classification |
 | `sap_get_session_info` | Get current session metadata like system, client, user, transaction, and screen, plus the SAP GUI release (`sap_gui_version`, e.g. `8.10 PL0`) and whether the server allows only read-only scripting (`scripting_read_only`) |
 | `sap_disconnect` | Disconnect from the current SAP session. Revokes the binding and leaves all SAP windows open; close windows manually |
 | `sap_set_confirmation_points` | Choose which write categories need blocking user approval for this session (see [Confirmation Points](#confirmation-points)) |

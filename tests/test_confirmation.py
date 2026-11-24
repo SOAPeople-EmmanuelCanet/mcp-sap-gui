@@ -1093,13 +1093,13 @@ class TestConfirmationCLIFloor:
     """--confirm is an immutable floor, modelled on --read-only."""
 
     def test_cli_populates_the_floor(self, srv):
-        argv = ["mcp-sap-gui", "--confirm", "field_writes", "transactions"]
+        argv = ["zz-mcp-sap-gui", "--confirm", "field_writes", "transactions"]
         with _cli(srv, argv):
             srv.main()
         assert srv.config.confirmation_floor == ["field_writes", "transactions"]
 
     def test_cli_rejects_unknown_points(self, srv):
-        argv = ["mcp-sap-gui", "--confirm", "everything"]
+        argv = ["zz-mcp-sap-gui", "--confirm", "everything"]
         with _cli(srv, argv), pytest.raises(SystemExit):
             srv.main()
 

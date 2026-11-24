@@ -111,7 +111,7 @@ def check_external_links() -> list[str]:
 
             request = urllib.request.Request(
                 link,
-                headers={"User-Agent": "mcp-sap-gui-doc-check/1.0"},
+                headers={"User-Agent": "zz-mcp-sap-gui-doc-check/1.0"},
                 method="HEAD",
             )
             try:

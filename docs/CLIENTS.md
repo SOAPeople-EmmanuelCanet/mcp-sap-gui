@@ -23,11 +23,11 @@ Every client needs the same three things. `uvx` downloads the released package f
 
 ```text
 Command:   uvx
-Arguments: mcp-sap-gui[screenshots]
+Arguments: mcp-sap-gui[rfc,screenshots] --rfc-destination DEV/100/00/dev.example.invalid=MCP_DEV_100
 Transport: stdio
 ```
 
-Options go after the package name, for example `mcp-sap-gui[screenshots] --read-only` or `mcp-sap-gui[screenshots] --confirm field_writes --audit-log C:\sap\audit.jsonl`. Every option: [Configuration](CONFIGURATION.md).
+Replace the RFC route example with values supplied by Basis; SAP access fails closed without it. The ready-made snippets below predate the unreleased mandatory [RFC client-role classification](RFC_CLIENT_CLASSIFICATION.md): add the `rfc` extra and `--rfc-destination` arguments shown above. Options go after the package name. Every option: [Configuration](CONFIGURATION.md).
 
 Restart the client, or reload its MCP servers, after changing the configuration.
 

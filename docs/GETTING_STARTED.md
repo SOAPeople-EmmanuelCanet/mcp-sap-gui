@@ -6,6 +6,7 @@ This page takes you from nothing to a first answer from SAP in your AI assistant
 
 - **Windows** with **SAP GUI for Windows** installed, and SAP Logon running (or a session in SAP Business Client, experimental).
 - **SAP GUI Scripting allowed**, in your SAP GUI options and on the SAP system. The second one is up to your Basis team: [Preparing SAP](SAP_SETUP.md) has what to ask for.
+- **SAP RFC client-role classification configured by Basis**, including the SAP NW RFC SDK, a direct destination and narrow access to `T000`: [RFC client classification](RFC_CLIENT_CLASSIFICATION.md).
 - **An AI assistant that supports MCP servers**, ideally one that shows the server's confirmation questions, so that you can approve a save. The Claude Code CLI, GitHub Copilot (CLI and VS Code) and the Codex CLI do; the Claude desktop app does not. Details per client: [Clients](CLIENTS.md).
 
 ## 1. Install uv
@@ -24,21 +25,21 @@ Every client needs the same three things:
 
 ```text
 Command:   uvx
-Arguments: mcp-sap-gui[screenshots]
+Arguments: mcp-sap-gui[rfc,screenshots] --rfc-destination DEV/100/00/dev.example.invalid=MCP_DEV_100
 Transport: stdio
 ```
 
-The `[screenshots]` part makes screenshots 70-90% smaller. Where each client keeps this, with a ready-made snippet for each: [Clients](CLIENTS.md). For example, in the Claude Code CLI:
+Replace the example backend and destination with values supplied by Basis. The `[screenshots]` part makes screenshots 70-90% smaller. Where each client keeps this, with a ready-made snippet for each: [Clients](CLIENTS.md). For example, in the Claude Code CLI:
 
 ```powershell
-claude mcp add sap-gui --scope user -- uvx "mcp-sap-gui[screenshots]"
+claude mcp add sap-gui --scope user -- uvx "mcp-sap-gui[rfc,screenshots]" --rfc-destination "DEV/100/00/dev.example.invalid=MCP_DEV_100"
 ```
 
 Restart the client (or reload its MCP servers) after adding the server.
 
 ## 3. Log on to SAP
 
-Open SAP Logon and log on as usual. The server attaches to the session that is already open, so your password never passes through the assistant. (`sap_connect` can open an SAP Logon entry and take credentials from a local `.env` file, but logging on yourself is the safer way.)
+Have Basis configure the mandatory [RFC client-role check](RFC_CLIENT_CLASSIFICATION.md). Open SAP Logon and log on as usual. `sap_connect` is disabled because the role cannot be verified before logon; your GUI password never passes through the assistant.
 
 ## 4. Ask something
 

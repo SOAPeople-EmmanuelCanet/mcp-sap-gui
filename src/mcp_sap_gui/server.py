@@ -91,6 +91,7 @@ from .prompts import (
     render_transaction_guide,
     render_workflow_guide,
 )
+from .rfc_classifier import RfcClientClassifier, parse_rfc_routes
 from .safety import WRITE_APPROVAL, validate_identity
 from .sap_controller import VKey
 from .session_manager import SessionManager
@@ -223,6 +224,8 @@ class ServerConfig:
     # --strict-errors / MCP_SAP_GUI_STRICT_ERRORS: return a failed result
     # (strict.result_error) as an MCP error (isError true). Off by default.
     strict_errors: bool = False
+    # Exact GUI backend -> sapnwrfc.ini destination routes. No runtime mutator.
+    rfc_routes: dict[tuple[str, str, str, str], str] = field(default_factory=dict)
 
     # Behavior settings
     default_language: str = "EN"
@@ -287,7 +290,7 @@ _TAGS_DESTRUCTIVE = {"destructive"}
 async def _lifespan(server: FastMCP):
     """Create the session manager on startup, clean up on shutdown."""
     global _session_mgr
-    _session_mgr = SessionManager()
+    _session_mgr = SessionManager(RfcClientClassifier(config.rfc_routes))
     try:
         yield {"session_mgr": _session_mgr}
     finally:
@@ -332,9 +335,8 @@ writes (batch fills, Save) so the user sees the screen and the pending values.
 1. SAP already logged on: `sap_connect_existing`; pass `system` (e.g. 'DEV') \
 when the user named the system. SAP Business Client sessions work too \
 (experimental).
-2. SAP not open: ask the user to log on manually. With writes enabled, \
-`sap_connect` can open a connection after approval; then call \
-`sap_connect_existing` to approve access to the actual session.
+2. SAP not open: ask the user to log on manually. `sap_connect` is disabled; \
+`sap_connect_existing` checks the SCC4 client role through RFC before attachment.
 3. `sap_get_session_info` shows the current transaction and screen.
 
 ## Screen Discovery
@@ -545,7 +547,7 @@ activated elsewhere, leave it (`/n`) and start it again before testing.
 # ---------------------------------------------------------------------------
 
 # Without version=, FastMCP reports its own version in serverInfo.
-mcp = FastMCP("mcp-sap-gui", version=__version__, instructions=_INSTRUCTIONS,
+mcp = FastMCP("zz-mcp-sap-gui", version=__version__, instructions=_INSTRUCTIONS,
               lifespan=_lifespan)
 # The lambda resolves _sap_identity (defined below) in the running module at
 # call time, like the config lambda next to it.
@@ -1233,51 +1235,15 @@ async def sap_connect(
     user: str | None = None,
     language: str | None = None,
 ) -> dict | InputRequiredResult:
-    """Connect to an SAP system by its name in SAP Logon Pad.
+    """Disabled because the client role cannot be checked before opening/logon.
 
-    Credentials are resolved from a .env file (SAP_USER, SAP_PASSWORD,
-    SAP_CLIENT, SAP_LANGUAGE) so passwords never appear in MCP tool calls.
-    Parameters provided here override the .env values (except password).
-    Requires --enable-writes and user approval. After opening the connection,
-    returns binding_pending: call sap_connect_existing to approve actual
-    session access. If SAP is already logged in, use that tool directly."""
-    _check_write(ctx)
-    c = _ctrl(ctx)
-    kwargs: dict[str, str] = {"system_description": system_description}
-    # Resolve credentials: explicit param > env var > omit
-    kwargs["user"] = user or os.environ.get("SAP_USER") or None
-    kwargs["client"] = client or os.environ.get("SAP_CLIENT") or None
-    kwargs["language"] = language or os.environ.get("SAP_LANGUAGE") or None
-    kwargs["password"] = os.environ.get("SAP_PASSWORD") or None
-    # Strip None values so controller uses its own defaults
-    kwargs = {k: v for k, v in kwargs.items() if v is not None}
-    shown = {k: v for k, v in kwargs.items() if k != "password"}
-    try:
-        answer = await ask_user(
-            ctx, points="all_writes", tool="sap_connect", gate="open_connection",
-            message=("Open and log on to an SAP connection? " + json.dumps(shown)
-                     + "\nAccess: connection creation only. Actual session access will "
-                     "require a separate attachment approval after logon."),
-            response_title="Yes, open connection", can_ask=True, shown=shown,
-        )
-    except McpError as exc:
-        raise ToolError(
-            f"Connection approval unavailable. Nothing opened.{NO_DIALOGS_NOTE}"
-        ) from exc
-    if isinstance(answer, Ask):
-        return answer.result
-    if not answer.yes:
-        raise ToolError("Connection creation declined. Nothing opened." + answer.note)
-
-    def open_and_detach():
-        try:
-            return _to_dict(c.connect(**kwargs))
-        finally:
-            c.disconnect(close_owned=False)
-
-    info = await _com(open_and_detach)
-    return {**info, "binding_pending": True, "confirmed_by_user": True,
-            "message": "Logon opened; use sap_connect_existing to approve the actual session."}
+    Log on manually, then use sap_connect_existing. The actual GUI backend is
+    checked through RFC before attachment is authorized.
+    """
+    raise ToolError(
+        "sap_connect is disabled because the SAP client role cannot be checked before logon. "
+        "Log on manually, then use sap_connect_existing."
+    )
 
 
 # "DEV(2)/100 " in front of a window title: the system, session number and
@@ -1306,7 +1272,8 @@ def _attach_candidates(connections: list) -> list[dict]:
         if conn.get("scripting_disabled"):
             continue
         for sess in conn.get("sessions", []):
-            if "error" in sess or not sess.get("system"):
+            if ("error" in sess or not sess.get("system")
+                    or sess.get("client_role_allowed") is False):
                 continue
             try:
                 identity = validate_identity(sess)
@@ -2933,6 +2900,12 @@ def main():
                              f"from ${POLICY_FILE_ENV}, else from "
                              "the per-user policy.json if it exists. Keep it "
                              "outside the agent's workspace")
+    parser.add_argument(
+        "--rfc-destination", action="append", default=[], metavar="ROUTE=DEST",
+        help=("Mandatory client-role check route (repeatable): "
+              "SID/CLIENT/SYSNR/APPLICATION_SERVER=SAPNWRFC_DEST. "
+              "The destination must be a direct sapnwrfc.ini entry for that backend"),
+    )
     parser.add_argument("--transport", choices=["stdio", "http"],
                         default="stdio",
                         help="Transport mode (default: stdio)")
@@ -3013,6 +2986,11 @@ def main():
     except ValueError as exc:
         parser.error(str(exc))
 
+    try:
+        rfc_routes = parse_rfc_routes(args.rfc_destination)
+    except ValueError as exc:
+        parser.error(f"RFC destination: {exc}")
+
     config = ServerConfig(
         read_only=args.read_only,
         allowed_transactions=args.allowed_transactions,
@@ -3025,6 +3003,7 @@ def main():
         confirmation_floor=list(args.confirm or []),
         detach_on_exit=args.detach_on_exit,
         strict_errors=args.strict_errors or strict_errors_from_env(os.environ),
+        rfc_routes=rfc_routes,
     )
     if config.strict_errors:
         logger.info("Strict errors: failed results are returned with isError")
@@ -3033,6 +3012,7 @@ def main():
     # log: a changed policy file is then visible after the fact.
     logger.info("Transaction policy: preset '%s' from %s (%d block, %d allow)",
                 policy.preset, policy.source, len(policy.block), len(policy.allow))
+    logger.info("RFC client-role classification routes: %d", len(config.rfc_routes))
     logging.getLogger("mcp_sap_gui.audit").info(
         json.dumps({"event": "policy", **config.policy.describe()})
     )
@@ -3068,7 +3048,7 @@ def main():
         except ImportError:
             parser.error(
                 "--code-mode requires the Monty sandbox. Install the extra: "
-                "uv sync --extra code-mode  (or: pip install 'mcp-sap-gui[code-mode]')"
+                "uv sync --extra code-mode  (or: pip install 'zz-mcp-sap-gui[code-mode]')"
             )
         mcp.add_transform(_build_code_mode_transform())
         logger.info("Code mode: tool catalog replaced with meta-tools "

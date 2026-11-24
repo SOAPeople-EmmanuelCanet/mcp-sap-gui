@@ -17,7 +17,7 @@ Read-only is the default. Every attachment requires approval, and every potentia
 | `batch_fields` | Filling several fields at once (`sap_set_batch_fields`) |
 | `field_writes` | Each single write: a field, a table cell, a text editor, a checkbox, a radio button, a dropdown |
 | `all_writes` | Always on: every action that can change something, including selecting, scrolling and navigation. A save asks twice, once for the point and once for the save |
-| `attach` | Attaching to an SAP session: you pick the session from a list of every open one (system, session number, client, user, transaction, window title), including when the assistant names a system with exactly one open session or supplies indexes; the question states the requested access level |
+| `attach` | Attaching to an allowed SAP session: RFC classification runs first, then you pick from the sessions that passed (system, session number, client, user, transaction, window title). Required even when the assistant names one session or supplies indexes; the question states the requested access level |
 
 ## What a question looks like
 

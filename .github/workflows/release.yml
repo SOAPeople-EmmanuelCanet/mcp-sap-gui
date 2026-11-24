@@ -71,7 +71,7 @@ jobs:
           uv export --frozen
           --extra screenshots --extra code-mode --extra apps
           --format cyclonedx1.5
-          -o dist/mcp-sap-gui-sbom.cdx.json
+          -o dist/zz-mcp-sap-gui-sbom.cdx.json
 
       - name: Generate checksums
         run: |

@@ -39,8 +39,9 @@ class SessionManager:
     COM calls (SAP GUI COM is apartment-threaded).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, client_classifier=None) -> None:
         self._sessions: Dict[Hashable, ManagedSession] = {}
+        self._client_classifier = client_classifier
         # Session-added confirmation points, keyed like _sessions but stored
         # separately: the confirmation middleware consults them on *every*
         # tool call, and get_or_create would eagerly build a SAPGUIController
@@ -66,6 +67,7 @@ class SessionManager:
         if session_key not in self._sessions:
             controller = SAPGUIController()
             controller.require_binding_approval = True
+            controller.client_classifier = self._client_classifier
             self._sessions[session_key] = ManagedSession(controller=controller)
             logger.info(
                 "Created SAP session binding (key=%s, total=%d)",

@@ -840,6 +840,9 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
+rfc = [
+    { name = "pyrfc" },
+]
 screenshots = [
     { name = "pillow" },
 ]
@@ -852,13 +855,14 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.5.0" },
     { name = "pillow", marker = "extra == 'screenshots'", specifier = ">=13.0.0" },
     { name = "prefab-ui", marker = "extra == 'apps'", specifier = "==0.20.2" },
+    { name = "pyrfc", marker = "extra == 'rfc'", specifier = "==3.3.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=306" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
 ]
-provides-extras = ["screenshots", "dev", "code-mode", "apps"]
+provides-extras = ["screenshots", "dev", "code-mode", "apps", "rfc"]
 
 [[package]]
 name = "mcp-types"
@@ -1481,6 +1485,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e8/52/d87eba7cb129b81563019d1679026e7a112ef76855d6159d24754dbd2a51/pyperclip-1.11.0.tar.gz", hash = "sha256:244035963e4428530d9e3a6101a1ef97209c6825edab1567beac148ccc1db1b6", size = 12185, upload-time = "2025-09-26T14:40:37.245Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/df/80/fc9d01d5ed37ba4c42ca2b55b4339ae6e200b456be3a1aaddf4a9fa99b8c/pyperclip-1.11.0-py3-none-any.whl", hash = "sha256:299403e9ff44581cb9ba2ffeed69c7aa96a008622ad0c46cb575ca75b5b84273", size = 11063, upload-time = "2025-09-26T14:40:36.069Z" },
+]
+
+[[package]]
+name = "pyrfc"
+version = "3.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/8e/b5/1018f4016959299ee812db77ebc9aa7dfb6136f2f24e4471deb22fdd120a/pyrfc-3.3.1.tar.gz", hash = "sha256:f04eb881f5747b4a4e13150dd62e011c0abddb8f392239be76000b7b6437c7cd", size = 354707, upload-time = "2024-01-09T09:38:13.555Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/96/1b/24a92778ffb9389d26c1a1d001eb1cb074a64a97a5a76ee28a8e629fa6bc/pyrfc-3.3.1-cp311-cp311-macosx_14_0_arm64.whl", hash = "sha256:bee43ec984f3757dba355d540ea3011c82e06a324b4c382503e4856248496cb8", size = 237011, upload-time = "2024-01-09T09:38:07.337Z" },
+    { url = "https://files.pythonhosted.org/packages/39/f2/4fb9ed37ea3fed47cc322e5cc36c3620c704e75ae85418b7e5c15b8f4db8/pyrfc-3.3.1-cp311-cp311-win_amd64.whl", hash = "sha256:fc8115d9a6e12c34199a6add47c57f5e875749b6a76a068f82219b5e45cf7995", size = 894922, upload-time = "2024-01-09T09:37:57.123Z" },
+    { url = "https://files.pythonhosted.org/packages/a7/cb/a5fa933447f04714f1f6b4bba8ead54815085936d5c3e64b686314d4ac8f/pyrfc-3.3.1-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:13eb9e799ac9b71a1145b7e21a667bf74b5b1092f4328961b72203f5e93dcacc", size = 229832, upload-time = "2024-01-09T09:38:09.404Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/05/39579c91304efd793ea346e204d7d059e7ecdf828fdc7944714798df3abe/pyrfc-3.3.1-cp312-cp312-win_amd64.whl", hash = "sha256:9bc668c47b998a8a79d89d5dbd3eaf108b87a1e4b81ba23057aba3931e50918c", size = 838249, upload-time = "2024-01-09T09:37:59.976Z" },
 ]
 
 [[package]]

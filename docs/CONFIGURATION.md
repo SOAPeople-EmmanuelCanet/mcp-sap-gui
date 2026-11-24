@@ -7,14 +7,14 @@ Options go after the package name in the client's server configuration, for exam
   "mcpServers": {
     "sap-gui": {
       "command": "uvx",
-      "args": ["mcp-sap-gui[screenshots]", "--confirm", "field_writes", "--audit-log", "C:\\sap\\audit.jsonl"],
+      "args": ["mcp-sap-gui[rfc,screenshots]", "--rfc-destination", "DEV/100/00/dev.example.invalid=MCP_DEV_100", "--confirm", "field_writes", "--audit-log", "C:\\sap\\audit.jsonl"],
       "env": { "MCP_SAP_GUI_STRICT_ERRORS": "1" }
     }
   }
 }
 ```
 
-`uvx "mcp-sap-gui[screenshots]" --help` lists them all. The server reads them once at startup: to change one, change the configuration and restart the client.
+`uvx "mcp-sap-gui[rfc,screenshots]" --help` lists them all. The server reads them once at startup: to change one, change the configuration and restart the client. Replace the RFC route example with values supplied by Basis.
 
 ## Options
 
@@ -27,6 +27,7 @@ Options go after the package name in the client's server configuration, for exam
 | `--policy-preset default\|abap-dev\|strict` | Which transactions the assistant may start (default: the preset named in the policy file, else `default`) |
 | `--policy-file FILE` | A JSON transaction policy with your own blocks and allows |
 | `--allowed-transactions T ...` | Older allowlist; it restricts on top of the policy |
+| `--rfc-destination ROUTE=DEST` | Mandatory direct RFC route used to verify the SCC4 client role before SAP access; repeat per GUI application server. See [RFC client classification](RFC_CLIENT_CLASSIFICATION.md) |
 | `--audit-log FILE` | Writes every tool call, question and answer as JSON lines. See [Audit log](SECURITY_GUIDE.md#audit-log) |
 | `--strict-errors` | Returns a failed result as an MCP error. See [Strict errors](#strict-errors) |
 | `--detach-on-exit` | Compatibility flag: shutdown and disconnect always leave SAP windows open |
@@ -49,7 +50,7 @@ Set them in the client's server configuration (`env`, as in the example above).
 | `MCP_SAP_GUI_STRICT_ERRORS=1` | The same as `--strict-errors` |
 | `MCP_SAP_GUI_DISABLE_OBJECT_TREE`, `MCP_SAP_GUI_TRACE_FILE` | Switches for a SAP GUI build that misbehaves on one-call reads: [SAP GUI versions](SAP_GUI_VERSIONS.md#switches-for-a-misbehaving-sap-gui-build) |
 | `PREFAB_BUNDLED_RENDERER=1` | Builds the preview card without loading its renderer from a CDN: [Preview cards](#preview-cards) |
-| `SAP_USER`, `SAP_PASSWORD`, `SAP_CLIENT`, `SAP_LANGUAGE` | Logon data for `sap_connect`. Passwords are never a tool parameter and never reach the client or the audit log. Logging on in SAP Logon yourself and attaching with `sap_connect_existing` is the safer way, since these values sit in a configuration file in plain text. In a source checkout a `.env` file in the repository root works too |
+| `SAP_USER`, `SAP_PASSWORD`, `SAP_CLIENT`, `SAP_LANGUAGE` | Legacy values are no longer used by `sap_connect`, which is disabled. RFC credentials belong in protected SAP NW RFC configuration; see [RFC client classification](RFC_CLIENT_CLASSIFICATION.md) |
 
 ## Extras
 
