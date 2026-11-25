@@ -64,7 +64,7 @@ Two environment variables, set in the MCP client's server definition
   "mcpServers": {
     "sap-gui": {
       "command": "uvx",
-      "args": ["mcp-sap-gui"],
+      "args": ["soa-mcp-sap-gui"],
       "env": {
         "MCP_SAP_GUI_DISABLE_OBJECT_TREE": "table",
         "MCP_SAP_GUI_TRACE_FILE": "C:\\Temp\\sap-object-tree.log"

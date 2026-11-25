@@ -5,14 +5,14 @@ requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mcp-sap-gui"
-version = "0.6.1"
+name = "soa-mcp-sap-gui"
+version = "0.0.1"
 description = "MCP Server for SAP GUI Scripting automation"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [
-    { name = "mcp-sap-gui contributors" }
+    { name = "soa-mcp-sap-gui contributors" }
 ]
 keywords = ["mcp", "sap", "gui", "automation", "scripting", "claude"]
 classifiers = [
@@ -55,6 +55,12 @@ apps = [
     # prefab-ui docs warn of frequent breaking changes - pin exact (like monty in code-mode)
     "prefab-ui==0.20.2",
 ]
+# PyRFC is SAP's Python wrapper for the NetWeaver RFC SDK. The public package
+# is archived/yanked, so it is exact-pinned and isolated in an explicit extra.
+# A supported SAP NW RFC SDK installation is still required at runtime.
+rfc = [
+    "pyrfc==3.3.1",
+]
 
 [project.urls]
 Repository = "https://github.com/kts982/mcp-sap-gui"
@@ -62,7 +68,7 @@ Changelog = "https://github.com/kts982/mcp-sap-gui/blob/master/CHANGELOG.md"
 Issues = "https://github.com/kts982/mcp-sap-gui/issues"
 
 [project.scripts]
-mcp-sap-gui = "mcp_sap_gui.server:main"
+soa-mcp-sap-gui = "mcp_sap_gui.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcp_sap_gui"]

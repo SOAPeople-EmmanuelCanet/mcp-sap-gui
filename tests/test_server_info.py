@@ -11,6 +11,6 @@ async def test_server_info_names_this_package_and_its_version():
     async with Client(server.mcp) as client:
         info = client.server_info
 
-    assert info.name == "zz-mcp-sap-gui"
+    assert info.name == "soa-mcp-sap-gui"
     # Not FastMCP's version, which it reports when version= is not passed.
     assert info.version == __version__

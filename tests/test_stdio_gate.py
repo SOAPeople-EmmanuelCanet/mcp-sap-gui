@@ -35,7 +35,7 @@ from mcp_sap_gui.controller import SAPGUIControllerBase
 from tests.fakes import action_target
 SAPGUIControllerBase._check_dependencies = lambda self: None
 SAPGUIControllerBase.action_target = lambda self: action_target()
-sys.argv = ["zz-mcp-sap-gui", "--enable-writes"]
+sys.argv = ["soa-mcp-sap-gui", "--enable-writes"]
 runpy.run_module("mcp_sap_gui.server", run_name="__main__")
 """
     transport = StdioTransport(command=sys.executable, args=["-c", script])

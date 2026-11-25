@@ -1,6 +1,6 @@
 # What it can do
 
-`mcp-sap-gui` gives an AI assistant hands and eyes in SAP GUI for Windows. It works on real SAP GUI screens through SAP's Scripting API: no screenshots to guess from, no OCR, no clicking at screen coordinates.
+`soa-mcp-sap-gui` gives an AI assistant hands and eyes in SAP GUI for Windows. It works on real SAP GUI screens through SAP's Scripting API: no screenshots to guess from, no OCR, no clicking at screen coordinates.
 
 ## In SAP terms
 

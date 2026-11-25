@@ -26,12 +26,12 @@ The policy decides which transactions an assistant may start. What is dangerous 
 - **`--policy-preset default`** (the default) blocks user and role administration (`SU01`, `SU10`, `SU01D`, `PFCG`, `SU53`), logs and dumps (`SM21`, `ST22`), development and program execution (`SE38`, `SA38`, `SE80`, `SE37`, `SE16N`), and system administration (`STMS`, `SCC4`, `RZ10`, `RZ11`, `SM36`, `SM49`, `SM69`, `SM59`, `STRUST`, `SICF`, `SM01`, `SM18`, `SM19`). Customizing and display work (`SM30`, `SM34`, `SPRO`, `SE16`, `SE11`) stays open.
 - **`--policy-preset abap-dev`** additionally allows `SA38`, `SE11` and `SE80`, for developers testing their own programs.
 - **`--policy-preset strict`** blocks everything the policy file does not allow: an allowlist.
-- **`--policy-file policy.json`** adds to the preset: `{"preset": "abap-dev", "block": ["ZHR*"], "allow": ["SM59"]}`. Entries are transaction codes or patterns (`SU*`, `/SCWM/*`), and `allow` always wins over `block`. Without the option the server reads `$MCP_SAP_GUI_POLICY_FILE`, else `%APPDATA%\mcp-sap-gui\policy.json` if it exists. Keep the file outside the assistant's workspace, so it cannot edit it.
+- **`--policy-file policy.json`** adds to the preset: `{"preset": "abap-dev", "block": ["ZHR*"], "allow": ["SM59"]}`. Entries are transaction codes or patterns (`SU*`, `/SCWM/*`), and `allow` always wins over `block`. Without the option the server reads `$MCP_SAP_GUI_POLICY_FILE`, else `%APPDATA%\soa-mcp-sap-gui\policy.json` if it exists. Keep the file outside the assistant's workspace, so it cannot edit it.
 - Two examples ship in the repository's [`examples/`](../examples/) folder: `policy.example.json` starts from `default`, also blocks a customer namespace (`ZHR*`) and `SE16`, and allows `ST22` for dump analysis; `policy.strict.example.json` is an allowlist for a display-only assistant. To make one your own policy:
 
   ```powershell
-  New-Item -ItemType Directory -Force "$env:APPDATA\mcp-sap-gui"
-  Copy-Item examples\policy.example.json "$env:APPDATA\mcp-sap-gui\policy.json"
+  New-Item -ItemType Directory -Force "$env:APPDATA\soa-mcp-sap-gui"
+  Copy-Item examples\policy.example.json "$env:APPDATA\soa-mcp-sap-gui\policy.json"
   ```
 
 How the policy holds:

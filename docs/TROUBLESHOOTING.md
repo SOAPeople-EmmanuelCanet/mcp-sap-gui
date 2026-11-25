@@ -3,7 +3,7 @@
 ## The SAP tools do not appear in the client
 
 - Restart the client after changing its MCP configuration, or reload its MCP servers. Most clients list the servers and their state: `/mcp` in Claude Code, Copilot CLI and Codex, the MCP view in VS Code.
-- Check that `uvx` can start the server: run `uvx "mcp-sap-gui[screenshots]" --help` in a terminal. If `uvx` is not found, open a new terminal after installing uv. On the first launch `uvx` downloads the package from PyPI: behind a proxy, set `HTTPS_PROXY`; with an internal package mirror, point uv at it with `UV_DEFAULT_INDEX`.
+- Check that `uvx` can start the server: run `uvx "soa-mcp-sap-gui[screenshots]" --help` in a terminal. If `uvx` is not found, open a new terminal after installing uv. On the first launch `uvx` downloads the package from PyPI: behind a proxy, set `HTTPS_PROXY`; with an internal package mirror, point uv at it with `UV_DEFAULT_INDEX`.
 - A project-level configuration (`.mcp.json`, `.vscode/mcp.json`, `.codex/config.toml`) is only read in a folder the client trusts.
 
 ## "Cannot connect to SAP GUI"
@@ -38,4 +38,4 @@ A SAP GUI build can fail on the server's one-call reads (`GetObjectTree`). Switc
 
 ## A new release is not picked up
 
-`uvx` keeps the version it downloaded first. Run `uvx "mcp-sap-gui[screenshots]@latest" --help` once, then restart the client: [Getting started](GETTING_STARTED.md#updating-to-a-new-release).
+`uvx` keeps the version it downloaded first. Run `uvx "soa-mcp-sap-gui[screenshots]@latest" --help` once, then restart the client: [Getting started](GETTING_STARTED.md#updating-to-a-new-release).

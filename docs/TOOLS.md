@@ -1,6 +1,6 @@
 # Tool Catalog
 
-`mcp-sap-gui` currently exposes **59 MCP tools**. This page is the reference for developers and for anyone who wants to know what the assistant can call; how to use the server is in [Getting started](GETTING_STARTED.md).
+`soa-mcp-sap-gui` currently exposes **59 MCP tools**. This page is the reference for developers and for anyone who wants to know what the assistant can call; how to use the server is in [Getting started](GETTING_STARTED.md).
 
 Two practical rules:
 

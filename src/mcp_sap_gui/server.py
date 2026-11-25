@@ -547,7 +547,7 @@ activated elsewhere, leave it (`/n`) and start it again before testing.
 # ---------------------------------------------------------------------------
 
 # Without version=, FastMCP reports its own version in serverInfo.
-mcp = FastMCP("zz-mcp-sap-gui", version=__version__, instructions=_INSTRUCTIONS,
+mcp = FastMCP("soa-mcp-sap-gui", version=__version__, instructions=_INSTRUCTIONS,
               lifespan=_lifespan)
 # The lambda resolves _sap_identity (defined below) in the running module at
 # call time, like the config lambda next to it.
@@ -3048,7 +3048,7 @@ def main():
         except ImportError:
             parser.error(
                 "--code-mode requires the Monty sandbox. Install the extra: "
-                "uv sync --extra code-mode  (or: pip install 'zz-mcp-sap-gui[code-mode]')"
+                "uv sync --extra code-mode  (or: pip install 'soa-mcp-sap-gui[code-mode]')"
             )
         mcp.add_transform(_build_code_mode_transform())
         logger.info("Code mode: tool catalog replaced with meta-tools "

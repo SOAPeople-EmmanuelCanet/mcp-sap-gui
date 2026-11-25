@@ -900,7 +900,7 @@ class TestServerProfile:
             srv.ServerConfig(read_only=False, profile="superuser")
 
     def test_cli_profile_is_recorded_on_config(self, srv):
-        argv = ["zz-mcp-sap-gui", "--profile", "exploration"]
+        argv = ["soa-mcp-sap-gui", "--profile", "exploration"]
         with patch("sys.argv", argv), \
              patch.object(srv, "load_dotenv", MagicMock()), \
              patch.object(srv.mcp, "run", MagicMock()), \

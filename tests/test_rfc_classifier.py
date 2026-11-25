@@ -83,7 +83,7 @@ def test_duplicate_route_fails_startup():
 def test_startup_route_is_not_tool_controlled(monkeypatch):
     monkeypatch.setattr(
         "sys.argv",
-        ["zz-mcp-sap-gui", "--rfc-destination",
+        ["soa-mcp-sap-gui", "--rfc-destination",
          "DEV/100/00/dev.example.invalid=MCP_DEV_100"],
     )
     monkeypatch.setattr(server, "load_dotenv", lambda: None)

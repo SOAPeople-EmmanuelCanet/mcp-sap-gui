@@ -25,14 +25,14 @@ Every client needs the same three things:
 
 ```text
 Command:   uvx
-Arguments: mcp-sap-gui[rfc,screenshots] --rfc-destination DEV/100/00/dev.example.invalid=MCP_DEV_100
+Arguments: soa-mcp-sap-gui[rfc,screenshots] --rfc-destination DEV/100/00/dev.example.invalid=MCP_DEV_100
 Transport: stdio
 ```
 
 Replace the example backend and destination with values supplied by Basis. The `[screenshots]` part makes screenshots 70-90% smaller. Where each client keeps this, with a ready-made snippet for each: [Clients](CLIENTS.md). For example, in the Claude Code CLI:
 
 ```powershell
-claude mcp add sap-gui --scope user -- uvx "mcp-sap-gui[rfc,screenshots]" --rfc-destination "DEV/100/00/dev.example.invalid=MCP_DEV_100"
+claude mcp add sap-gui --scope user -- uvx "soa-mcp-sap-gui[rfc,screenshots]" --rfc-destination "DEV/100/00/dev.example.invalid=MCP_DEV_100"
 ```
 
 Restart the client (or reload its MCP servers) after adding the server.
@@ -63,10 +63,10 @@ The server defaults to read-only. To permit changes, add `--enable-writes` to it
 `uvx` keeps the version it downloaded first, so a new release is not picked up by itself. Run this once, then restart your assistant:
 
 ```powershell
-uvx "mcp-sap-gui[screenshots]@latest" --help
+uvx "soa-mcp-sap-gui[screenshots]@latest" --help
 ```
 
-To stay on one release instead, put the version in the client's arguments: `mcp-sap-gui[screenshots]==<version>`. What changed in each release: [CHANGELOG](../CHANGELOG.md).
+To stay on one release instead, put the version in the client's arguments: `soa-mcp-sap-gui[screenshots]==<version>`. What changed in each release: [CHANGELOG](../CHANGELOG.md).
 
 ## If something does not work
 

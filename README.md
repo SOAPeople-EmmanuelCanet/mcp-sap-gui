@@ -1,6 +1,6 @@
 # MCP SAP GUI Server
 
-<!-- mcp-name: io.github.kts982/mcp-sap-gui -->
+<!-- mcp-name: io.github.kts982/soa-mcp-sap-gui -->
 
 [![CI](https://github.com/kts982/mcp-sap-gui/actions/workflows/ci.yml/badge.svg)](https://github.com/kts982/mcp-sap-gui/actions/workflows/ci.yml)
 [![Docs](https://github.com/kts982/mcp-sap-gui/actions/workflows/docs.yml/badge.svg)](https://github.com/kts982/mcp-sap-gui/actions/workflows/docs.yml)
@@ -37,11 +37,11 @@ More, with example prompts: [What it can do](https://github.com/kts982/mcp-sap-g
 
    ```text
    Command:   uvx
-   Arguments: mcp-sap-gui[rfc,screenshots] --rfc-destination DEV/100/00/dev.example.invalid=MCP_DEV_100
+   Arguments: soa-mcp-sap-gui[rfc,screenshots] --rfc-destination DEV/100/00/dev.example.invalid=MCP_DEV_100
    Transport: stdio
    ```
 
-   Replace the example backend and destination with values supplied by Basis. In the Claude Code CLI, for example: `claude mcp add sap-gui --scope user -- uvx "mcp-sap-gui[rfc,screenshots]" --rfc-destination "DEV/100/00/dev.example.invalid=MCP_DEV_100"`. Every client: [Clients](https://github.com/kts982/mcp-sap-gui/blob/master/docs/CLIENTS.md).
+   Replace the example backend and destination with values supplied by Basis. In the Claude Code CLI, for example: `claude mcp add sap-gui --scope user -- uvx "soa-mcp-sap-gui[rfc,screenshots]" --rfc-destination "DEV/100/00/dev.example.invalid=MCP_DEV_100"`. Every client: [Clients](https://github.com/kts982/mcp-sap-gui/blob/master/docs/CLIENTS.md).
 3. Log on to SAP in SAP Logon, then ask: *"Connect to my open SAP session and tell me what system I'm on."*
 
 Step by step, including updating to a new release: [Getting started](https://github.com/kts982/mcp-sap-gui/blob/master/docs/GETTING_STARTED.md).

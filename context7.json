@@ -1,7 +1,7 @@
 {
   "$schema": "https://context7.com/schema/context7.json",
-  "projectTitle": "mcp-sap-gui",
-  "description": "MCP server that drives SAP GUI for Windows through the SAP GUI Scripting API. It reads screens, fields, ALV grids, table controls, trees and popups, and fills fields, presses buttons and runs transactions, with a transaction policy, confirmation dialogs for saves and an audit log. Python package mcp-sap-gui on PyPI.",
+  "projectTitle": "soa-mcp-sap-gui",
+  "description": "MCP server that drives SAP GUI for Windows through the SAP GUI Scripting API. It reads screens, fields, ALV grids, table controls, trees and popups, and fills fields, presses buttons and runs transactions, with a transaction policy, confirmation dialogs for saves and an audit log. Python package soa-mcp-sap-gui on PyPI.",
   "folders": ["docs"],
   "excludeFiles": [
     "AGENTS.md",

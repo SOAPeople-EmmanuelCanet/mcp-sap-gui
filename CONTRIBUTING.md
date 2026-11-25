@@ -50,7 +50,7 @@ Transport: stdio
 
 ```text
 Command:   uv
-Arguments: run --isolated --no-project --with "mcp-sap-gui[screenshots,apps] @ file:///<path-to-checkout>" python -m mcp_sap_gui.server
+Arguments: run --isolated --no-project --with "soa-mcp-sap-gui[screenshots,apps] @ file:///<path-to-checkout>" python -m mcp_sap_gui.server
 ```
 
 ## Before Opening a PR

@@ -23,7 +23,7 @@ Every client needs the same three things. `uvx` downloads the released package f
 
 ```text
 Command:   uvx
-Arguments: mcp-sap-gui[rfc,screenshots] --rfc-destination DEV/100/00/dev.example.invalid=MCP_DEV_100
+Arguments: soa-mcp-sap-gui[rfc,screenshots] --rfc-destination DEV/100/00/dev.example.invalid=MCP_DEV_100
 Transport: stdio
 ```
 
@@ -36,7 +36,7 @@ Restart the client, or reload its MCP servers, after changing the configuration.
 For every project:
 
 ```powershell
-claude mcp add sap-gui --scope user -- uvx "mcp-sap-gui[screenshots]"
+claude mcp add sap-gui --scope user -- uvx "soa-mcp-sap-gui[screenshots]"
 ```
 
 For one project only, commit a `.mcp.json` in its root (Claude Code asks once whether to trust it):
@@ -47,7 +47,7 @@ For one project only, commit a `.mcp.json` in its root (Claude Code asks once wh
     "sap-gui": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["mcp-sap-gui[screenshots]"]
+      "args": ["soa-mcp-sap-gui[screenshots]"]
     }
   }
 }
@@ -58,7 +58,7 @@ For one project only, commit a `.mcp.json` in its root (Claude Code asks once wh
 ## GitHub Copilot CLI
 
 ```powershell
-copilot mcp add sap-gui -- uvx "mcp-sap-gui[screenshots]"
+copilot mcp add sap-gui -- uvx "soa-mcp-sap-gui[screenshots]"
 ```
 
 That writes your user configuration (`~/.copilot/mcp-config.json`). Copilot CLI also reads a `.mcp.json` (the same format as above) or `.github/mcp.json` in a folder you trust. `/mcp` lists the servers.
@@ -75,18 +75,18 @@ Create `.vscode/mcp.json` in your workspace, or run **MCP: Add Server** from the
     "sap-gui": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["mcp-sap-gui[screenshots]"]
+      "args": ["soa-mcp-sap-gui[screenshots]"]
     }
   }
 }
 ```
 
-Then open Copilot Chat, switch to Agent mode, and start the server from the tools list. VS Code also shows `sap_preview` as a rendered card with the screenshot and the values about to be written (install with `mcp-sap-gui[screenshots,apps]`; see [Configuration](CONFIGURATION.md#preview-cards)).
+Then open Copilot Chat, switch to Agent mode, and start the server from the tools list. VS Code also shows `sap_preview` as a rendered card with the screenshot and the values about to be written (install with `soa-mcp-sap-gui[screenshots,apps]`; see [Configuration](CONFIGURATION.md#preview-cards)).
 
 ## Codex CLI
 
 ```powershell
-codex mcp add sap-gui -- uvx "mcp-sap-gui[screenshots]"
+codex mcp add sap-gui -- uvx "soa-mcp-sap-gui[screenshots]"
 ```
 
 That writes `~/.codex/config.toml`. Add a longer tool timeout there by hand: Codex waits for a confirmation question inside the tool call, and its default of 60 seconds can cut you off while you read the question.
@@ -94,7 +94,7 @@ That writes `~/.codex/config.toml`. Add a longer tool timeout there by hand: Cod
 ```toml
 [mcp_servers.sap-gui]
 command = "uvx"
-args = ["mcp-sap-gui[screenshots]"]
+args = ["soa-mcp-sap-gui[screenshots]"]
 tool_timeout_sec = 300
 ```
 
@@ -111,7 +111,7 @@ The app has three tabs, and none of them shows the confirmation questions (see t
     "mcpServers": {
       "sap-gui": {
         "command": "uvx",
-        "args": ["mcp-sap-gui[screenshots]", "--read-only"]
+        "args": ["soa-mcp-sap-gui[screenshots]", "--read-only"]
       }
     }
   }
@@ -129,7 +129,7 @@ The Antigravity CLI, IDE and app share one MCP configuration: `~/.gemini/config/
   "mcpServers": {
     "sap-gui": {
       "command": "uvx",
-      "args": ["mcp-sap-gui[screenshots]"]
+      "args": ["soa-mcp-sap-gui[screenshots]"]
     }
   }
 }

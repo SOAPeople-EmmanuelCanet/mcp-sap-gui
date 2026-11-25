@@ -817,54 +817,6 @@ wheels = [
 ]
 
 [[package]]
-name = "mcp-sap-gui"
-version = "0.6.1"
-source = { editable = "." }
-dependencies = [
-    { name = "fastmcp" },
-    { name = "python-dotenv" },
-    { name = "pywin32", marker = "sys_platform == 'win32'" },
-]
-
-[package.optional-dependencies]
-apps = [
-    { name = "fastmcp", extra = ["apps"] },
-    { name = "prefab-ui" },
-]
-code-mode = [
-    { name = "fastmcp", extra = ["code-mode"] },
-]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
-]
-rfc = [
-    { name = "pyrfc" },
-]
-screenshots = [
-    { name = "pillow" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastmcp", specifier = ">=4.1.3,<4.2" },
-    { name = "fastmcp", extras = ["apps"], marker = "extra == 'apps'", specifier = ">=4.1.3,<4.2" },
-    { name = "fastmcp", extras = ["code-mode"], marker = "extra == 'code-mode'", specifier = ">=4.1.3,<4.2" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.5.0" },
-    { name = "pillow", marker = "extra == 'screenshots'", specifier = ">=13.0.0" },
-    { name = "prefab-ui", marker = "extra == 'apps'", specifier = "==0.20.2" },
-    { name = "pyrfc", marker = "extra == 'rfc'", specifier = "==3.3.1" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
-    { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=306" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
-]
-provides-extras = ["screenshots", "dev", "code-mode", "apps", "rfc"]
-
-[[package]]
 name = "mcp-types"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2104,3 +2056,51 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/79/36/f54b4a1cd9456ca0a65a76d77d181621433793aca633dfeed214748ff4f0/websockets-17.3-pp312-pypy312_pp80-win_amd64.whl", hash = "sha256:13eace1b315345ebac5b27821f5dcce24e5cf9976ab18f79e00a59bdd67e5d19", size = 306301, upload-time = "2026-10-19T16:58:03.161Z" },
     { url = "https://files.pythonhosted.org/packages/d7/b0/3f01fcb3406662f6deb1e3e72b34dd0979e993991c0b7435a9e12bc14f02/websockets-17.3-py3-none-any.whl", hash = "sha256:dc2b495a92b3971966bf102e73589f950db3ec1ca6713265355ce7771d97b199", size = 212375, upload-time = "2026-10-19T16:58:04.483Z" },
 ]
+
+[[package]]
+name = "soa-mcp-sap-gui"
+version = "0.0.1"
+source = { editable = "." }
+dependencies = [
+    { name = "fastmcp" },
+    { name = "python-dotenv" },
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
+]
+
+[package.optional-dependencies]
+apps = [
+    { name = "fastmcp", extra = ["apps"] },
+    { name = "prefab-ui" },
+]
+code-mode = [
+    { name = "fastmcp", extra = ["code-mode"] },
+]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+]
+rfc = [
+    { name = "pyrfc" },
+]
+screenshots = [
+    { name = "pillow" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastmcp", specifier = ">=4.1.3,<4.2" },
+    { name = "fastmcp", extras = ["apps"], marker = "extra == 'apps'", specifier = ">=4.1.3,<4.2" },
+    { name = "fastmcp", extras = ["code-mode"], marker = "extra == 'code-mode'", specifier = ">=4.1.3,<4.2" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.5.0" },
+    { name = "pillow", marker = "extra == 'screenshots'", specifier = ">=13.0.0" },
+    { name = "prefab-ui", marker = "extra == 'apps'", specifier = "==0.20.2" },
+    { name = "pyrfc", marker = "extra == 'rfc'", specifier = "==3.3.1" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=306" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+]
+provides-extras = ["screenshots", "dev", "code-mode", "apps", "rfc"]

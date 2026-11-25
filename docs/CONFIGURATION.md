@@ -7,14 +7,14 @@ Options go after the package name in the client's server configuration, for exam
   "mcpServers": {
     "sap-gui": {
       "command": "uvx",
-      "args": ["mcp-sap-gui[rfc,screenshots]", "--rfc-destination", "DEV/100/00/dev.example.invalid=MCP_DEV_100", "--confirm", "field_writes", "--audit-log", "C:\\sap\\audit.jsonl"],
+      "args": ["soa-mcp-sap-gui[rfc,screenshots]", "--rfc-destination", "DEV/100/00/dev.example.invalid=MCP_DEV_100", "--confirm", "field_writes", "--audit-log", "C:\\sap\\audit.jsonl"],
       "env": { "MCP_SAP_GUI_STRICT_ERRORS": "1" }
     }
   }
 }
 ```
 
-`uvx "mcp-sap-gui[rfc,screenshots]" --help` lists them all. The server reads them once at startup: to change one, change the configuration and restart the client. Replace the RFC route example with values supplied by Basis.
+`uvx "soa-mcp-sap-gui[rfc,screenshots]" --help` lists them all. The server reads them once at startup: to change one, change the configuration and restart the client. Replace the RFC route example with values supplied by Basis.
 
 ## Options
 
@@ -46,7 +46,7 @@ Set them in the client's server configuration (`env`, as in the example above).
 
 | Variable | What it does |
 |---|---|
-| `MCP_SAP_GUI_POLICY_FILE` | The policy file, when `--policy-file` is not given. Without either, the server reads `%APPDATA%\mcp-sap-gui\policy.json` if it exists |
+| `MCP_SAP_GUI_POLICY_FILE` | The policy file, when `--policy-file` is not given. Without either, the server reads `%APPDATA%\soa-mcp-sap-gui\policy.json` if it exists |
 | `MCP_SAP_GUI_STRICT_ERRORS=1` | The same as `--strict-errors` |
 | `MCP_SAP_GUI_DISABLE_OBJECT_TREE`, `MCP_SAP_GUI_TRACE_FILE` | Switches for a SAP GUI build that misbehaves on one-call reads: [SAP GUI versions](SAP_GUI_VERSIONS.md#switches-for-a-misbehaving-sap-gui-build) |
 | `PREFAB_BUNDLED_RENDERER=1` | Builds the preview card without loading its renderer from a CDN: [Preview cards](#preview-cards) |
@@ -54,7 +54,7 @@ Set them in the client's server configuration (`env`, as in the example above).
 
 ## Extras
 
-The package has optional parts, chosen in square brackets: `mcp-sap-gui[screenshots,apps]`.
+The package has optional parts, chosen in square brackets: `soa-mcp-sap-gui[screenshots,apps]`.
 
 | Extra | What it adds |
 |---|---|
@@ -83,8 +83,8 @@ Most SAP failures come back as a normal result with an `error` key, so a client 
 stdio is the default and has no network surface: the client starts the server and talks to it directly. With `--transport http` the server listens on `127.0.0.1:8000`:
 
 ```powershell
-uvx "mcp-sap-gui[screenshots]" --transport http
-uvx "mcp-sap-gui[screenshots]" --transport http --host 0.0.0.0 --port 9000 --allowed-host sap-box
+uvx "soa-mcp-sap-gui[screenshots]" --transport http
+uvx "soa-mcp-sap-gui[screenshots]" --transport http --host 0.0.0.0 --port 9000 --allowed-host sap-box
 ```
 
 - A request addressed to a host name other than localhost, 127.0.0.1, the bound address or an `--allowed-host` is refused, and so is a browser request from another origin unless it is listed with `--allowed-origin`. That stops a web page from reaching the server through DNS rebinding. MCP clients send no `Origin` header and are not affected.
@@ -95,7 +95,7 @@ The HTTP transport has no authentication of its own: never make it reachable fro
 
 ## Preview cards
 
-`sap_preview` always returns a written summary and the screenshot, so it works in every client. Clients that support MCP Apps (for example VS Code with Copilot) show a card with the screenshot and a table of the values about to be written instead. Install the `apps` extra for that: `uvx "mcp-sap-gui[screenshots,apps]"`.
+`sap_preview` always returns a written summary and the screenshot, so it works in every client. Clients that support MCP Apps (for example VS Code with Copilot) show a card with the screenshot and a table of the values about to be written instead. Install the `apps` extra for that: `uvx "soa-mcp-sap-gui[screenshots,apps]"`.
 
 By default the card loads its renderer from the jsDelivr CDN, so on a PC without internet access the card silently does not render. `PREFAB_BUNDLED_RENDERER=1` in the server's environment makes the renderer self-contained (about 6.3 MB inline, no third-party domains).
 
@@ -104,5 +104,5 @@ By default the card loads its renderer from the jsDelivr CDN, so on a PC without
 `--code-mode` (with the `code-mode` extra) replaces the tool list with four meta-tools (`search`, `get_schema`, `tags`, `execute`): the assistant writes a short script that chains SAP calls in a sandbox. It is faster and cheaper on long chained flows such as full table dumps, and slower on quick questions. The confirmation questions and the transaction policy apply inside the sandbox too; on MCP 2026-07-28 a script cannot ask a question, so an action that needs one is refused there and has to be called directly. The audit log records a script by its hash and size, not its text, and each call it makes on a line of its own ([Audit log](SECURITY_GUIDE.md#audit-log)).
 
 ```powershell
-uvx "mcp-sap-gui[screenshots,code-mode]" --code-mode
+uvx "soa-mcp-sap-gui[screenshots,code-mode]" --code-mode
 ```

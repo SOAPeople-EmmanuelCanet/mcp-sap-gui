@@ -6,6 +6,7 @@ Every release and what changed for someone running the server. The [GitHub relea
 
 ### Changed
 
+- Rename the package and command to `soa-mcp-sap-gui`. Update MCP client commands and move any per-user policy to `%APPDATA%\soa-mcp-sap-gui\policy.json`, or set `MCP_SAP_GUI_POLICY_FILE` to the policy's current path.
 - Default to read-only. `--enable-writes` is an explicit startup-only opt-in; every mutating action still requires approval. `save`, `attach` and `all_writes` are mandatory.
 - Require an approval picker for every session attachment, including named and indexed sessions. Revalidate the full logon identity on access; missing identity, session closure or replacement revokes authorization.
 - Bind action approval to the tool, arguments, session binding and screen fingerprint; recheck in the COM job immediately before execution and consume approval once.

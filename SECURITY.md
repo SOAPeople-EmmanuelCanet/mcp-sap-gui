@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you believe you have found a security issue in `mcp-sap-gui`, please do not open a public GitHub issue.
+If you believe you have found a security issue in `soa-mcp-sap-gui`, please do not open a public GitHub issue.
 
 Use one of these paths instead:
 
@@ -19,7 +19,7 @@ Please include:
 
 ## Scope Notes
 
-`mcp-sap-gui` is an alpha project for local use on Windows. stdio, the default transport, has no network surface; the optional HTTP transport binds to 127.0.0.1 and refuses requests for other host names and from other web origins, but has no authentication of its own.
+`soa-mcp-sap-gui` is an alpha project for local use on Windows. stdio, the default transport, has no network surface; the optional HTTP transport binds to 127.0.0.1 and refuses requests for other host names and from other web origins, but has no authentication of its own.
 
 Important current constraints:
 

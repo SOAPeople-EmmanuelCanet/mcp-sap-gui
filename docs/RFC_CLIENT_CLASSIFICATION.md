@@ -23,7 +23,7 @@ on one of those versions unless your organization builds and validates another t
 
 ```text
 Command:   uvx
-Arguments: mcp-sap-gui[rfc,screenshots] --rfc-destination DEV/100/00/dev.example.invalid=MCP_DEV_100
+Arguments: soa-mcp-sap-gui[rfc,screenshots] --rfc-destination DEV/100/00/dev.example.invalid=MCP_DEV_100
 ```
 
 Create `sapnwrfc.ini` outside the assistant's workspace. Configure one **direct**

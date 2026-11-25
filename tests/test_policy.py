@@ -237,7 +237,7 @@ class TestResolvePolicyFile:
         monkeypatch.setenv("APPDATA", str(tmp_path))
         assert resolve_policy_file(None) is None
 
-        target = tmp_path / "zz-mcp-sap-gui" / "policy.json"
+        target = tmp_path / "soa-mcp-sap-gui" / "policy.json"
         target.parent.mkdir()
         target.write_text("{}", encoding="utf-8")
 
